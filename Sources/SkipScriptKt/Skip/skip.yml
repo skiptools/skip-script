@@ -1,0 +1,14 @@
+# skip.tools per-configuration file
+
+#skip:
+#  package: 'skip.script'
+
+# the blocks to add to the build.gradle.kts
+build:
+  contents:
+    - block: 'dependencies'
+      contents:
+        - 'implementation("net.java.dev.jna:jna:5.13.0@aar")'
+        - 'implementation("org.webkit:android-jsc:r174650@aar")'
+        - 'testImplementation("net.java.dev.jna:jna:5.13.0")'
+
