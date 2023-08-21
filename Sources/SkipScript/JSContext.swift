@@ -4,14 +4,6 @@
 // under the terms of the GNU Lesser General Public License 3.0
 // as published by the Free Software Foundation https://fsf.org
 #if SKIP
-struct ScriptEvalError : Error { }
-struct NoScriptResultError : Error { }
-#else
-struct ScriptEvalError : Swift.Error { }
-struct NoScriptResultError : Swift.Error { }
-#endif
-
-#if SKIP
 public typealias JSContext = SkipJSContext
 public typealias JSValue = SkipJSValue
 

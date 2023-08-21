@@ -3,23 +3,14 @@
 // This is free software: you can redistribute and/or modify it
 // under the terms of the GNU Lesser General Public License 3.0
 // as published by the Free Software Foundation https://fsf.org
-#if !SKIP
-@testable import SkipScript
-#endif
-import Foundation
 import OSLog
+import Foundation
 import JavaScriptCore
 import XCTest
 
-//#if !SKIP
-//// MARK: Shims for API parity
-//fileprivate typealias JSContext = SkipJSContext
-//fileprivate typealias JSValue = SkipJSValue
-//#endif
-
 @available(macOS 11, iOS 14, watchOS 7, tvOS 14, *)
 class JSContextTests : XCTestCase {
-    fileprivate let logger: Logger = Logger(subsystem: "test", category: "JSContextTests")
+    let logger: Logger = Logger(subsystem: "test", category: "JSContextTests")
 
     fileprivate final class JSEvalException : Error {
         var exception: JSValue?
@@ -36,7 +27,7 @@ class JSContextTests : XCTestCase {
         XCTAssertEqual(3.3, num.toDouble())
         #if SKIP
         let className = "\(type(of: num))" // could be: "class skip.foundation.SkipJSValue (Kotlin reflection is not available)"
-        XCTAssertTrue(className.contains("skip.script.SkipJSValue"), "unexpected calss name: \(className)")
+        XCTAssertTrue(className.contains("skip.script.SkipJSValue"), "unexpected class name: \(className)")
         #endif
         XCTAssertEqual("3.3", num.toString())
 
@@ -147,3 +138,6 @@ class JSContextTests : XCTestCase {
     }
     #endif
 }
+
+struct ScriptEvalError : Error { }
+struct NoScriptResultError : Error { }
