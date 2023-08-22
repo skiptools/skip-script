@@ -28,9 +28,6 @@ let package = Package(
         ], plugins: [.plugin(name: "preflight", package: "skip")]),
         .testTarget(name: "SkipScriptKtTests", dependencies: [
             "SkipScriptKt",
-            .product(name: "SkipUnitKt", package: "skip-unit"),
-            .product(name: "SkipLibKt", package: "skip-lib"),
-            .product(name: "SkipFoundationKt", package: "skip-foundation"),
             .product(name: "SkipUnit", package: "skip-unit"),
         ], resources: [.process("Skip")], plugins: [.plugin(name: "transpile", package: "skip")]),
     ]
