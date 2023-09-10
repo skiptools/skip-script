@@ -240,7 +240,7 @@ typealias JSValue = JavaScriptCore.JSValue
 let JavaScriptCore: JavaScriptCoreLibrary = {
     let isAndroid = System.getProperty("java.vm.vendor") == "The Android Project"
     if isAndroid {
-        System.loadLibrary("icu")
+        //System.loadLibrary("icu")
     }
 
     // on Android we use the embedded libjsc.so; on macOS host, use the system JavaScriptCore
