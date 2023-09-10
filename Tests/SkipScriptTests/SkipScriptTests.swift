@@ -8,6 +8,12 @@ import Foundation
 import JavaScriptCore
 import XCTest
 
+#if SKIP
+let isAndroid = System.getProperty("java.vm.vendor") == "The Android Project"
+#else
+let isAndroid = false
+#endif
+
 @available(macOS 11, iOS 14, watchOS 7, tvOS 14, *)
 class JSContextTests : XCTestCase {
     let logger: Logger = Logger(subsystem: "test", category: "JSContextTests")
@@ -21,6 +27,10 @@ class JSContextTests : XCTestCase {
     }
 
     func testJSCAPIHigh() throws {
+        if isAndroid {
+            throw XCTSkip("JSC native libraries not working on Android")
+        }
+
         let ctx = try XCTUnwrap(JSContext())
         let num = try XCTUnwrap(ctx.evaluateScript("1 + 2.3"))
         
