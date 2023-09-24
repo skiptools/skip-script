@@ -9,14 +9,14 @@ let package = Package(
         .library(name: "SkipScript", targets: ["SkipScript"]),
     ],
     dependencies: [
-        .package(url: "https://source.skip.tools/skip.git", from: "0.6.56"),
-        .package(url: "https://source.skip.tools/skip-foundation.git", from: "0.1.15"),
+        .package(url: "https://source.skip.tools/skip.git", from: "0.6.75"),
+        .package(url: "https://source.skip.tools/skip-foundation.git", from: "0.2.1"),
     ],
     targets: [
-        .target(name: "SkipScript", dependencies: [.product(name: "SkipFoundation", package: "skip-foundation", condition: .when(platforms: [.macOS]))], plugins: [.plugin(name: "skipstone", package: "skip")]),
+        .target(name: "SkipScript", dependencies: [.product(name: "SkipFoundation", package: "skip-foundation")], plugins: [.plugin(name: "skipstone", package: "skip")]),
         .testTarget(name: "SkipScriptTests", dependencies: [
             "SkipScript",
-            .product(name: "SkipTest", package: "skip", condition: .when(platforms: [.macOS]))
+            .product(name: "SkipTest", package: "skip")
         ], plugins: [.plugin(name: "skipstone", package: "skip")]),
     ]
 )

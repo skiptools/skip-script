@@ -27,10 +27,6 @@ class JSContextTests : XCTestCase {
     }
 
     func testJSCAPIHigh() throws {
-        if isAndroid {
-            throw XCTSkip("JSC native libraries not working on Android")
-        }
-
         let ctx = try XCTUnwrap(JSContext())
         let num = try XCTUnwrap(ctx.evaluateScript("1 + 2.3"))
         
