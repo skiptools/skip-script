@@ -2,4 +2,22 @@ build:
   contents:
     - block: 'dependencies'
       contents:
-        - 'implementation("org.webkit:android-jsc:r250230@aar")'
+        - 'implementation("org.webkit:android-jsc-cppruntime:r245459@aar")'
+        - 'implementation("org.webkit:android-jsc:r245459@aar")'
+        # the -intl variant is disabled due to its size
+        # it could conceiveably be added to a separate SkipScriptIntl module variant
+        #- 'implementation("org.webkit:android-jsc-intl:r245459@aar")'
+
+# the blocks to add to the settings.gradle.kts
+settings:
+  contents:
+    - block: 'dependencyResolutionManagement'
+      contents:
+        - block: 'repositories'
+          contents:
+            # we use a custom maven repository for the native JavaScriptCore libraries,
+            # since the org.webkit:android-jsc package mavenCentral has not been updated
+            # with a new release since 2015
+            - 'maven("https://github.com/jectivex/jsc-android/raw/main/releases")'
+
+

@@ -29,7 +29,7 @@ class JSContextTests : XCTestCase {
     func testJSCAPIHigh() throws {
         let ctx = try XCTUnwrap(JSContext())
         let num = try XCTUnwrap(ctx.evaluateScript("1 + 2.3"))
-        
+
         XCTAssertEqual(3.3, num.toDouble())
         #if SKIP
         let className = "\(type(of: num))" // could be: "class skip.foundation.SkipJSValue (Kotlin reflection is not available)"

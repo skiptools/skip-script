@@ -10,7 +10,12 @@ import SkipTest
 @available(macOS 13, macCatalyst 16, *)
 final class XCSkipTests: XCTestCase, XCGradleHarness {
     public func testSkipModule() async throws {
-        // set device ID to run in Android emulator vs. robolectric
+        // Run the transpiled tests for the current test module.
+        // The tests will run in the Robolectric Android simulation environment.
+        // Device or emulator tests can be run against an `adb devices` identifier
+        // by specifying it in the `device` parameter or the
+        // `ANDROID_SERIAL` environment variable in the scheme's Run settings.
+        // Note that it isn't currently possible to filter the tests to run.
         try await runGradleTests(device: .none)
     }
 }
