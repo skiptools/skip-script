@@ -3,21 +3,19 @@
 // This is free software: you can redistribute and/or modify it
 // under the terms of the GNU Lesser General Public License 3.0
 // as published by the Free Software Foundation https://fsf.org
-#if SKIP
-public typealias JSContext = SkipJSContext
-public typealias JSValue = SkipJSValue
-
-/// Public constructor optional init
-//public func JSContext() -> JSContext? {
-//    SkipJSContext()
-//}
-
-typealias ExceptionPtr = JSValuePointer
-#else
+#if !SKIP
+// Non-Skip uses the JavaScriptCore symbols directly
+import JavaScriptCore
+typealias JSValue = JavaScriptCore.JSValue
 typealias ExceptionPtr = UnsafeMutablePointer<JSValueRef?>
+#else
+import SkipFFI
+public typealias JSValue = SkipJSValue
+typealias ExceptionPtr = JSValuePointer
 #endif
 
-public class SkipJSContext {
+/// A context for evaluating JavaScipt.
+public class JSContext {
     public let context: JSContextRef
     public private(set) var exception: SkipJSValue? = nil
 
@@ -33,7 +31,7 @@ public class SkipJSContext {
         if let exception = exception {
             // errors are handled by returning nil and setting the current exception poinrts
             #if SKIP
-            if let error: com.sun.jna.Pointer = exception.value {
+            if let error: OpaquePointer = exception.value {
                 self.exception = SkipJSValue(context: self, value: error)
                 return false
             }
@@ -64,10 +62,10 @@ public class SkipJSContext {
 }
 
 public class SkipJSValue {
-    public let context: SkipJSContext
+    public let context: JSContext
     public let value: JSValueRef
 
-    public init(context: SkipJSContext, value: JSValueRef) {
+    public init(context: JSContext, value: JSValueRef) {
         JavaScriptCore.JSValueProtect(context.context, value)
         self.context = context
         self.value = value
@@ -223,11 +221,7 @@ fileprivate extension Int {
 }
 #endif
 
-#if !SKIP
-// Non-Skip uses the JavaScriptCore symbols directly
-import JavaScriptCore
-typealias JSValue = JavaScriptCore.JSValue
-#else
+#if SKIP
 
 // workaround for Skip converting "JavaScriptCode.self.javaClass" to "(JavaScriptCoreLibrary::class.companionObjectInstance as JavaScriptCoreLibrary.Companion).java)"
 // SKIP INSERT: fun <T : Any> javaClass(kotlinClass: kotlin.reflect.KClass<T>): Class<T> { return kotlinClass.java }
@@ -244,11 +238,9 @@ let JavaScriptCore: JavaScriptCoreLibrary = {
     return com.sun.jna.Native.load(jscName, javaClass(JavaScriptCoreLibrary.self))
 }()
 
-typealias Pointer = com.sun.jna.Pointer
-
 /// A JavaScript value. The base type for all JavaScript values, and polymorphic functions on them.
-typealias OpaqueJSValue = Pointer
-typealias JSValuePointer = com.sun.jna.ptr.PointerByReference
+typealias OpaqueJSValue = OpaquePointer
+typealias JSValuePointer = UnsafeMutableRawPointer
 
 typealias JSValueRef = OpaqueJSValue
 typealias JSStringRef = OpaqueJSValue
@@ -263,8 +255,8 @@ protocol JavaScriptCoreLibrary : com.sun.jna.Library {
     func JSStringIsEqual(_ string1: JSStringRef, _ string2: JSStringRef) -> Bool
     func JSStringGetLength(_ string: JSStringRef) -> Int
     func JSStringGetMaximumUTF8CStringSize(_ string: JSStringRef) -> Int
-    func JSStringGetCharactersPtr(_ string: JSStringRef) -> Pointer
-    func JSStringGetUTF8CString(_ string: JSStringRef, _ buffer: Pointer, _ bufferSize: Int) -> Int
+    func JSStringGetCharactersPtr(_ string: JSStringRef) -> OpaquePointer
+    func JSStringGetUTF8CString(_ string: JSStringRef, _ buffer: OpaquePointer, _ bufferSize: Int) -> Int
     func JSStringCreateWithUTF8CString(_ string: String) -> JSStringRef
     func JSStringIsEqualToUTF8CString(_ stringRef: JSStringRef, _ string: String) -> Bool
 
