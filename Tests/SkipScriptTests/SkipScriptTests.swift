@@ -6,6 +6,7 @@
 import OSLog
 import Foundation
 import JavaScriptCore
+import SkipFFI
 import XCTest
 
 #if SKIP
@@ -13,6 +14,10 @@ let isAndroid = System.getProperty("java.vm.vendor") == "The Android Project"
 #else
 let isAndroid = false
 #endif
+
+/// Constant for callback testing
+let callbackResult = Double.pi
+
 
 @available(macOS 11, iOS 14, watchOS 7, tvOS 14, *)
 class JSContextTests : XCTestCase {
@@ -78,8 +83,55 @@ class JSContextTests : XCTestCase {
     }
 
     func testJSCCallbacks() throws {
+        let jsc = JavaScriptCore.JSGlobalContextCreate(nil)
+        defer { JavaScriptCore.JSGlobalContextRelease(jsc) }
+        let ctx = try XCTUnwrap(JSContext(jsGlobalContextRef: jsc))
 
+        func eval(_ script: String) throws -> JSValue {
+            let result = ctx.evaluateScript(script)
+            if let exception = ctx.exception {
+                throw JSEvalException(exception: exception)
+            }
+            if let result = result {
+                return result
+            } else {
+                throw JSEvalException()
+            }
+        }
+
+        XCTAssertEqual("test", try eval("'te' + 'st'").toString())
+
+        let callbackName = JavaScriptCore.JSStringCreateWithUTF8CString("skip_cb")
+        defer { JavaScriptCore.JSStringRelease(callbackName) }
+
+        #if !SKIP
+        let callbackFunction = JavaScriptCore.JSObjectMakeFunctionWithCallback(jsc, callbackName) { (ctx: JSContextRef?, function: JSObjectRef?, thisObject: JSObjectRef?, argumentCount: Int, arguments: UnsafePointer<JSValueRef?>?, exception: UnsafeMutablePointer<JSValueRef?>?) in
+            JavaScriptCore.JSValueMakeNumber(ctx, callbackResult)
+        }
+        #else
+        let callbackPtr = JSCCallbackDemo()
+        let callbackFunction = JavaScriptCore.JSObjectMakeFunctionWithCallback(jsc, callbackName, callbackPtr)
+        #endif
+
+        // invoke the callback directly
+        let f = try XCTUnwrap(JavaScriptCore.JSObjectCallAsFunction(jsc, callbackFunction, nil, 0, nil, nil))
+        XCTAssertEqual(callbackResult, JavaScriptCore.JSValueToNumber(jsc, f, nil))
+
+        #if !SKIP
+        // TODO: need JSObjectSetProperty in Skip
+        JavaScriptCore.JSObjectSetProperty(jsc, jsc, callbackName, callbackFunction, JSPropertyAttributes(kJSPropertyAttributeNone), nil)
+        XCTAssertEqual(callbackResult.description, try eval("skip_cb()").toString())
+        #endif
     }
+
+    #if SKIP
+    class JSCCallbackDemo : com.sun.jna.Callback {
+        // TODO: (ctx: JSContextRef?, function: JSObjectRef?, thisObject: JSObjectRef?, argumentCount: Int, arguments: UnsafePointer<JSValueRef?>?, exception: UnsafeMutablePointer<JSValueRef?>?)
+        func callback(ctx: JSContextRef?, function: JSObjectRef?, thisObject: JSObjectRef?, argumentCount: Int32, arguments: UnsafeMutableRawPointer?, exception: UnsafeMutableRawPointer?) -> JSValueRef {
+            JavaScriptCore.JSValueMakeNumber(ctx!, callbackResult)
+        }
+    }
+    #endif
 
     func testJSCAPILow() throws {
         let ctx = JavaScriptCore.JSGlobalContextCreate(nil)
@@ -149,3 +201,4 @@ class JSContextTests : XCTestCase {
 
 struct ScriptEvalError : Error { }
 struct NoScriptResultError : Error { }
+

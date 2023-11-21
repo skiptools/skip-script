@@ -19,7 +19,7 @@ public class JSContext {
     public let context: JSContextRef
     public private(set) var exception: SkipJSValue? = nil
 
-    public init(context: JSContextRef) {
+    public init(jsGlobalContextRef context: JSContextRef) {
         self.context = context
     }
 
@@ -301,8 +301,9 @@ protocol JavaScriptCoreLibrary : com.sun.jna.Library {
     func JSObjectGetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyIndex: Int, _ exception: JSValuePointer?) -> JSValueRef
     func JSObjectSetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, propertyIndex: Int, _ value: JSValueRef, _ exception: JSValuePointer?)
 
-//    func JSObjectMakeFunctionWithCallback(_ ctx: JSContextRef, _ name: JSStringRef, Pointer<NativeFunction<JSObjectCallAsFunctionCallback>> callAsFunction) -> JSObjectRef
+    func JSObjectMakeFunctionWithCallback(_ ctx: JSContextRef, _ name: JSStringRef, _ callAsFunction: com.sun.jna.Callback) -> JSObjectRef
 
+    func JSObjectCallAsFunction(_ ctx: JSContextRef, _ object: OpaquePointer?, _ thisObject: OpaquePointer?, _ argumentCount: Int32, _ arguments: UnsafeMutableRawPointer?, _ exception: UnsafeMutableRawPointer?) -> JSValueRef
 }
 
 #endif
