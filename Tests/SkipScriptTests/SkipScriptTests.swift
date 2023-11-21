@@ -77,7 +77,10 @@ class JSContextTests : XCTestCase {
         #endif // !SKIP // debug crash
     }
 
-    #if !SKIP
+    func testJSCCallbacks() throws {
+
+    }
+
     func testJSCAPILow() throws {
         let ctx = JavaScriptCore.JSGlobalContextCreate(nil)
         defer { JavaScriptCore.JSGlobalContextRelease(ctx) }
@@ -96,7 +99,7 @@ class JSContextTests : XCTestCase {
             let result = JavaScriptCore.JSEvaluateScript(ctx, scriptValue, nil, nil, 1, exception)
 
             #if SKIP
-            if let error: com.sun.jna.Pointer = exception.value as com.sun.jna.Pointer {
+            if let error: com.sun.jna.Pointer = exception.value as? com.sun.jna.Pointer {
                 XCTFail("JavaScript exception occurred: \(error)")
                 throw ScriptEvalError()
             }
@@ -142,7 +145,6 @@ class JSContextTests : XCTestCase {
             // TODO: extract error message and verify
         }
     }
-    #endif
 }
 
 struct ScriptEvalError : Error { }

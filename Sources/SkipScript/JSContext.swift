@@ -300,6 +300,9 @@ protocol JavaScriptCoreLibrary : com.sun.jna.Library {
     func JSObjectGetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyName: JSStringRef, _ exception: JSValuePointer?) -> JSValueRef
     func JSObjectGetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyIndex: Int, _ exception: JSValuePointer?) -> JSValueRef
     func JSObjectSetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, propertyIndex: Int, _ value: JSValueRef, _ exception: JSValuePointer?)
+
+//    func JSObjectMakeFunctionWithCallback(_ ctx: JSContextRef, _ name: JSStringRef, Pointer<NativeFunction<JSObjectCallAsFunctionCallback>> callAsFunction) -> JSObjectRef
+
 }
 
 #endif

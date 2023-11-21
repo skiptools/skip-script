@@ -2,7 +2,7 @@ SkipScript provides a unified interface to the JavaScriptCore script engine on
 both iOS (using the platform-provided JavaScriptCore libraries) and
 on Android (using the bundled libjsc.so library). SkipScript enables
 a single scripting language (JavaScript) to be embedded in a dual-platform
-Skip app and provide the exact same behavior on both platorms.
+Skip app and provide the exact same behavior on both platforms.
 
 Note that SkipScript will automatically be imported when it is included
 as a dependency and a Swift source file imports the `JavaScriptCore` framework.
@@ -24,6 +24,13 @@ assert(num.toDouble() == 3.3)
 ```
 
 **NOTE**: JIT compilation is blocked on iOS without a special entitlement, which can drastically impact the performance of JavaScriptCore on iOS compared to either macOS or Android (where JIT is not blocked).
+
+## Implementation
+
+On iOS and other Darwin platforms, the built-in `JavaScriptCore` libraries will be used. 
+
+Android, on the other handle, does not ship JSC as part of the operating system, and so the dependency on the Android side will utilize the `org.webkit:android-jsc` package to bundle a native build of JavaScriptCore with the app itself. This will increase the total `.apk` size by between 5-10Mb.
+
 
 ## Building
 
