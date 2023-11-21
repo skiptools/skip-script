@@ -4,20 +4,19 @@
 // under the terms of the GNU Lesser General Public License 3.0
 // as published by the Free Software Foundation https://fsf.org
 #if !SKIP
+import Foundation
 // Non-Skip uses the JavaScriptCore symbols directly
 import JavaScriptCore
-typealias JSValue = JavaScriptCore.JSValue
-typealias ExceptionPtr = UnsafeMutablePointer<JSValueRef?>
+public typealias ExceptionPtr = UnsafeMutablePointer<JSValueRef?>
 #else
 import SkipFFI
-public typealias JSValue = SkipJSValue
 typealias ExceptionPtr = JSValuePointer
 #endif
 
 /// A context for evaluating JavaScipt.
 public class JSContext {
     public let context: JSContextRef
-    public private(set) var exception: SkipJSValue? = nil
+    public private(set) var exception: JSValue? = nil
 
     public init(jsGlobalContextRef context: JSContextRef) {
         self.context = context
@@ -31,16 +30,15 @@ public class JSContext {
         if let exception = exception {
             // errors are handled by returning nil and setting the current exception poinrts
             #if SKIP
-            if let error: OpaquePointer = exception.value {
-                self.exception = SkipJSValue(context: self, value: error)
-                return false
-            }
+            let errorPtr: OpaquePointer? = exception.value
             #else
-            if let error: JavaScriptCore.JSValueRef = exception.pointee {
-                self.exception = SkipJSValue(context: self, value: error)
+            let errorPtr: JavaScriptCore.JSValueRef? = exception.pointee
+            #endif
+
+            if let error = errorPtr {
+                self.exception = JSValue(jsValueRef: error, in: self)
                 return false
             }
-            #endif
         }
 
         // clear the current exception
@@ -48,7 +46,7 @@ public class JSContext {
         return true
     }
 
-    public func evaluateScript(_ script: String) -> SkipJSValue? {
+    public func evaluateScript(_ script: String) -> JSValue? {
         let scriptValue = JavaScriptCore.JSStringCreateWithUTF8CString(script)
         defer { JavaScriptCore.JSStringRelease(scriptValue) }
 
@@ -57,18 +55,84 @@ public class JSContext {
         if !clearException(exception) {
             return nil
         }
-        return SkipJSValue(context: self, value: result!)
+        return JSValue(jsValueRef: result!, in: self)
+    }
+
+    public func setObject(_ object: Any, forKeyedSubscript key: String) {
+        let propName = JavaScriptCore.JSStringCreateWithUTF8CString("key")
+        defer { JavaScriptCore.JSStringRelease(propName) }
+        let exception = ExceptionPtr(nil)
+        let valueRef = JSValue(object: object, in: self).value
+        JavaScriptCore.JSObjectSetProperty(context, context, propName, valueRef, JSPropertyAttributes(kJSPropertyAttributeNone), exception)
+    }
+
+    public func objectForKeyedSubscript(_ key: String) -> JSValue {
+        let propName = JavaScriptCore.JSStringCreateWithUTF8CString("key")
+        defer { JavaScriptCore.JSStringRelease(propName) }
+
+        let exception = ExceptionPtr(nil)
+        let value = JavaScriptCore.JSObjectGetProperty(context, context, propName, exception)
+        if !clearException(exception) {
+            return JSValue(nullIn: self)
+        } else if let value = value {
+            return JSValue(jsValueRef: value, in: self)
+        } else {
+            return JSValue(nullIn: self)
+        }
     }
 }
 
-public class SkipJSValue {
+public class JSValue {
     public let context: JSContext
     public let value: JSValueRef
 
-    public init(context: JSContext, value: JSValueRef) {
-        JavaScriptCore.JSValueProtect(context.context, value)
+    public init(jsValueRef: JSValueRef, in context: JSContext) {
+        JavaScriptCore.JSValueProtect(context.context, jsValueRef)
         self.context = context
-        self.value = value
+        self.value = jsValueRef
+    }
+
+    public init(nullIn context: JSContext) {
+        self.context = context
+        self.value = JavaScriptCore.JSValueMakeNull(context.context)
+    }
+
+    public init(object obj: Any, in context: JSContext) {
+        self.context = context
+        switch obj {
+        case let bol as Bool:
+            self.value = JavaScriptCore.JSValueMakeBoolean(context.context, bol)
+
+        case let num as Double:
+            self.value = JavaScriptCore.JSValueMakeNumber(context.context, num)
+        case let num as Float:
+            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+
+        case let num as Int8:
+            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+        case let num as Int16:
+            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+        case let num as Int32:
+            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+        case let num as Int64:
+            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+
+        case let num as UInt8:
+            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+        case let num as UInt16:
+            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+        case let num as UInt32:
+            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+        case let num as UInt64:
+            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+
+            // FIXME: crash
+//        case let str as String:
+//            self.value = JavaScriptCore.JSStringCreateWithUTF8CString(str)
+
+        default:
+            self.value = JavaScriptCore.JSValueMakeNull(context.context)
+        }
     }
 
     public var isUndefined: Bool {
@@ -149,7 +213,7 @@ public class SkipJSValue {
             guard let elementValue = JavaScriptCore.JSObjectGetPropertyAtIndex(context.context, value, .init(index), exception) else {
                 return []
             }
-            let element = SkipJSValue(context: context, value: elementValue)
+            let element = JSValue(jsValueRef: elementValue, in: context)
             if !context.clearException(exception) {
                 // any exceptions will short-circuit and return an empty array
                 return []
@@ -298,6 +362,8 @@ protocol JavaScriptCoreLibrary : com.sun.jna.Library {
     func JSValueCreateJSONString(_ ctx: JSContextRef, _ value: JSValueRef, _ indent: UInt32, _ exception: JSValuePointer?) -> JSStringRef
 
     func JSObjectGetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyName: JSStringRef, _ exception: JSValuePointer?) -> JSValueRef
+    func JSObjectSetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, propertyName: JSValueRef, _ value: JSValueRef, _ attributes: JSPropertyAttributes, _ exception: JSValuePointer?)
+
     func JSObjectGetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyIndex: Int, _ exception: JSValuePointer?) -> JSValueRef
     func JSObjectSetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, propertyIndex: Int, _ value: JSValueRef, _ exception: JSValuePointer?)
 
@@ -306,5 +372,15 @@ protocol JavaScriptCoreLibrary : com.sun.jna.Library {
     func JSObjectCallAsFunction(_ ctx: JSContextRef, _ object: OpaquePointer?, _ thisObject: OpaquePointer?, _ argumentCount: Int32, _ arguments: UnsafeMutableRawPointer?, _ exception: UnsafeMutableRawPointer?) -> JSValueRef
 }
 
-#endif
+public typealias JSPropertyAttributes = Int32
 
+/// Specifies that a property has no special attributes.
+public let kJSPropertyAttributeNone: JSPropertyAttributes = Int32(0)
+/// Specifies that a property is read-only.
+public let kJSPropertyAttributeReadOnly: JSPropertyAttributes = Int32(1) << 1
+/// Specifies that a property should not be enumerated by JSPropertyEnumerators and JavaScript for...in loops.
+public let kJSPropertyAttributeDontEnum: JSPropertyAttributes = Int32(1) << 2
+/// Specifies that the delete operation should fail on a property.
+public let kJSPropertyAttributeDontDelete: JSPropertyAttributes = Int32(1) << 3
+
+#endif

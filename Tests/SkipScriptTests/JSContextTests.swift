@@ -38,7 +38,7 @@ class JSContextTests : XCTestCase {
         XCTAssertEqual(3.3, num.toDouble())
         #if SKIP
         let className = "\(type(of: num))" // could be: "class skip.foundation.SkipJSValue (Kotlin reflection is not available)"
-        XCTAssertTrue(className.contains("skip.script.SkipJSValue"), "unexpected class name: \(className)")
+        XCTAssertTrue(className.contains("skip.script.JSValue"), "unexpected class name: \(className)")
         #endif
         XCTAssertEqual("3.3", num.toString())
 
@@ -80,6 +80,26 @@ class JSContextTests : XCTestCase {
         XCTAssertEqual(10.0, try eval("['10', '10', '10'].map(parseInt)").toArray().first as? Double)
         XCTAssertEqual(2.0, try eval("['10', '10', '10'].map(parseInt)").toArray().last as? Double)
         #endif // !SKIP // debug crash
+    }
+
+    func testJSCProperties() throws {
+        let ctx = try XCTUnwrap(JSContext())
+
+        ctx.setObject(10.1, forKeyedSubscript: "doubleProp" as NSString)
+        XCTAssertEqual(10.1, ctx.objectForKeyedSubscript("doubleProp").toObject() as? Double)
+
+        ctx.setObject(10, forKeyedSubscript: "intProp" as NSString)
+        XCTAssertEqual(10.0, ctx.objectForKeyedSubscript("intProp").toObject() as? Double)
+
+        ctx.setObject(true, forKeyedSubscript: "boolProp" as NSString)
+        XCTAssertEqual(true, ctx.objectForKeyedSubscript("boolProp").toObject() as? Bool)
+
+        ctx.setObject(false, forKeyedSubscript: "boolProp" as NSString)
+        XCTAssertEqual(false, ctx.objectForKeyedSubscript("boolProp").toObject() as? Bool)
+
+        // crash
+//        ctx.setObject("XYZ", forKeyedSubscript: "stringProp" as NSString)
+//        XCTAssertEqual("XYZ", ctx.objectForKeyedSubscript("stringProp").toObject() as? String)
     }
 
     func testJSCCallbacks() throws {
