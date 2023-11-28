@@ -7,12 +7,3 @@ build:
         # the -intl variant is disabled due to its size
         # it could conceiveably be added to a separate SkipScriptIntl module variant
         #- 'implementation("org.webkit:android-jsc-intl:r245459@aar")'
-    - block: 'repositories'
-      contents:
-        - 'mavenCentral()'
-        - 'google()'
-        # we use a custom maven repository for the native JavaScriptCore libraries,
-        # since the org.webkit:android-jsc package mavenCentral has not been updated
-        # with a new release since 2015
-        - 'maven("https://github.com/jectivex/jsc-android/raw/main/releases")'
-
