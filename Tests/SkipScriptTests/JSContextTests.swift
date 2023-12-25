@@ -83,6 +83,68 @@ class JSContextTests : XCTestCase {
         #endif // !SKIP // debug crash
     }
 
+    func testIntl() throws {
+        if isAndroid {
+            // android-jsc-r245459.aar (13M) vs. android-jsc-intl-r245459.aar (24M)
+            throw XCTSkip("Android release is not linked to android-jsc-intl so i18n does not work")
+        }
+
+        let ctx = try XCTUnwrap(JSContext())
+
+        XCTAssertEqual("12,34 €", ctx.evaluateScript("new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(12.34)")?.toString())
+        XCTAssertEqual("65.4", ctx.evaluateScript("new Intl.NumberFormat('en-IN', { maximumSignificantDigits: 3 }).format(65.4321)")?.toString())
+        XCTAssertEqual("٦٥٫٤٣٢١", ctx.evaluateScript("new Intl.NumberFormat('ar-AR', { maximumSignificantDigits: 6 }).format(65.432123456789)")?.toString())
+
+        let yen = "new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(45.678)"
+        // I'm guessing these are different values because they use combining marks differently
+        #if os(Linux)
+        XCTAssertEqual("￥46", ctx.evaluateScript(yen)?.toString())
+        #else
+        XCTAssertEqual("¥46", ctx.evaluateScript(yen)?.toString())
+        #endif
+
+        XCTAssertEqual("10/24/2022", ctx.evaluateScript("new Intl.DateTimeFormat('en-US', {timeZone: 'UTC'}).format(new Date('2022-10-24'))")?.toString())
+        XCTAssertEqual("24/10/2022", ctx.evaluateScript("new Intl.DateTimeFormat('fr-FR', {timeZone: 'UTC'}).format(new Date('2022-10-24'))")?.toString())
+    }
+
+    func testProxy() throws {
+        let ctx = try XCTUnwrap(JSContext())
+
+        // create a proxy that acts as a map what sorted an uppercase form of the string
+        let value: JSValue? = ctx.evaluateScript("""
+        var proxyMap = new Proxy(new Map(), {
+          // The 'get' function allows you to modify the value returned
+          // when accessing properties on the proxy
+          get: function(target, name) {
+            if (name === 'set') {
+              // Return a custom function for Map.set that sets
+              // an upper-case version of the value.
+              return function(key, value) {
+                return target.set(key, value.toUpperCase());
+              };
+            }
+            else {
+              var value = target[name];
+              // If the value is a function, return a function that
+              // is bound to the original target. Otherwise the function
+              // would be called with the Proxy as 'this' and Map
+              // functions do not work unless the 'this' is the Map.
+              if (value instanceof Function) {
+                return value.bind(target);
+              }
+              // Return the normal property value for everything else
+              return value;
+            }
+          }
+        });
+
+        proxyMap.set(0, 'foo');
+        proxyMap.get(0);
+        """)
+
+        XCTAssertEqual("FOO", value?.toString())
+    }
+
     func testJSCProperties() throws {
         let ctx = try XCTUnwrap(JSContext())
 
@@ -131,13 +193,17 @@ class JSContextTests : XCTestCase {
         defer { JavaScriptCore.JSStringRelease(callbackName) }
 
         #if !SKIP
-        let callbackFunction = JavaScriptCore.JSObjectMakeFunctionWithCallback(jsc, callbackName) { (ctx: JSContextRef?, function: JSObjectRef?, thisObject: JSObjectRef?, argumentCount: Int, arguments: UnsafePointer<JSValueRef?>?, exception: UnsafeMutablePointer<JSValueRef?>?) in
+        func callbackPtr(ctx: JSContextRef?, function: JSObjectRef?, thisObject: JSObjectRef?, argumentCount: Int, arguments: UnsafePointer<JSValueRef?>?, exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
             JavaScriptCore.JSValueMakeNumber(ctx, callbackResult)
         }
         #else
-        let callbackPtr = JSCCallbackDemo()
-        let callbackFunction = JavaScriptCore.JSObjectMakeFunctionWithCallback(jsc, callbackName, callbackPtr)
+        let callbackPtr = JSCCallback() 
+//        { ctx in
+//            JavaScriptCore.JSValueMakeNumber(ctx!!, callbackResult)
+//        }
         #endif
+
+        let callbackFunction = JavaScriptCore.JSObjectMakeFunctionWithCallback(jsc, callbackName, callbackPtr)
 
         // invoke the callback directly
         let f = try XCTUnwrap(JavaScriptCore.JSObjectCallAsFunction(jsc, callbackFunction, nil, 0, nil, nil))
@@ -151,9 +217,16 @@ class JSContextTests : XCTestCase {
     }
 
     #if SKIP
-    class JSCCallbackDemo : com.sun.jna.Callback {
+    class JSCCallback : com.sun.jna.Callback {
+//        let callbackBlock: (JSContextRef?) -> JSValueRef?
+//
+//        init(callbackBlock: @escaping (JSContextRef?) -> JSValueRef?) {
+//            self.callbackBlock = callbackBlock
+//        }
+
         // TODO: (ctx: JSContextRef?, function: JSObjectRef?, thisObject: JSObjectRef?, argumentCount: Int, arguments: UnsafePointer<JSValueRef?>?, exception: UnsafeMutablePointer<JSValueRef?>?)
         func callback(ctx: JSContextRef?, function: JSObjectRef?, thisObject: JSObjectRef?, argumentCount: Int32, arguments: UnsafeMutableRawPointer?, exception: UnsafeMutableRawPointer?) -> JSValueRef {
+            //callbackBlock(ctx)
             JavaScriptCore.JSValueMakeNumber(ctx!, callbackResult)
         }
     }

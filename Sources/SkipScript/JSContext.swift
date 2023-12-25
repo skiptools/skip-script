@@ -273,6 +273,8 @@ public class JSValue {
     }
 
     deinit {
+        // this has been seen to raise an exception on the Android emulator:
+        // java.util.concurrent.TimeoutException: skip.script.JSValue.finalize() timed out after 10 seconds
         JavaScriptCore.JSValueUnprotect(context.context, value)
     }
 }
