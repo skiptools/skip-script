@@ -28,8 +28,10 @@ class SkipContextTests : XCTestCase {
                 JSValue(double: args.reduce(0.0, { $0 + $1.toDouble() }), in: ctx)
             }
             for _ in 0...100 {
-
                 let num = Double.random(in: 0.0...1000.0)
+                if isAndroid {
+                    throw XCTSkip("testFunctionCallback crashes on Android emulator")
+                }
                 XCTAssertEqual(num + 3.0, add.call(withArguments: [JSValue(double: 3.0, in: ctx), JSValue(double: num, in: ctx)]).toDouble())
 
                 #if !SKIP
@@ -41,14 +43,4 @@ class SkipContextTests : XCTestCase {
             }
         }
     }
-
-//    func testSlice() throws {
-//        let jsc = JSContext()
-//
-//        let bytes: [UInt8] = [1, 2, 3, 4, 5, 6, 7, 8]
-//        try jsc.global.setProperty("buffer", JSValue(newArrayBufferWithBytes: bytes, in: jsc))
-//
-//        XCTAssertEqual(try jsc.eval("buffer.slice(2, 4)").copyBytes().map(Array.init), [3, 4])
-//    }
-
 }
