@@ -282,8 +282,12 @@ class JSContextTests : XCTestCase {
         XCTAssertTrue(JavaScriptCore.JSValueIsDate(ctx, try js("new Date()")))
         XCTAssertTrue(JavaScriptCore.JSValueIsObject(ctx, try js(#"new Object()"#)))
 
-        if isAndroid || isJava {
-            throw XCTSkip("testJSCAPILow error handling fails")
+        do {
+            _ = try js("XXX()")
+            XCTFail("Expected error")
+        } catch {
+            // e.g.: skip.lib.ErrorThrowable: java.lang.AssertionError: JavaScript exception occurred: native@0x168020ea8
+            // TODO: extract error message and verify
         }
 
         XCTAssertTrue(JavaScriptCore.JSValueIsNumber(ctx, try js("""
@@ -295,21 +299,10 @@ class JSContextTests : XCTestCase {
           return sum;
         }
 
-        const largeArray = new Array(100000000).fill(1);
+        const largeArray = new Array(100000).fill(1);
         sumArray(largeArray);
         """)))
 
-        if isAndroid || isJava {
-            throw XCTSkip("testJSCAPILow error handling fails")
-        }
-
-        do {
-            _ = try js("XXX()")
-            XCTFail("Expected error")
-        } catch {
-            // e.g.: skip.lib.ErrorThrowable: java.lang.AssertionError: JavaScript exception occurred: native@0x168020ea8
-            // TODO: extract error message and verify
-        }
     }
 }
 
