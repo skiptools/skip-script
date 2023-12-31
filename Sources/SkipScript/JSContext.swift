@@ -675,7 +675,7 @@ private final class JSFunctionCallbackImpl : JSCallbackFunction {
     init() {
     }
 
-    public func JSFunctionCallback(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ this: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
+    public func JSFunctionCallback(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ this: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafeMutablePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
         guard let object = object,
               let data = JavaScriptCore.JSObjectGetPrivate(object) else {
             return nil
@@ -1006,7 +1006,7 @@ protocol JavaScriptCoreLibrary : com.sun.jna.Library {
     func JSObjectMakeFunctionWithCallback(_ ctx: JSContextRef, _ name: JSStringRef, _ callAsFunction: JSObjectCallAsFunctionCallback) -> JSObjectRef
     func JSObjectMake(_ ctx: JSContextRef, _ jsClass: JSClassRef?, _ data: OpaqueJSValue?) -> JSObjectRef
 
-    func JSObjectCallAsFunction(_ ctx: JSContextRef, _ object: OpaquePointer?, _ thisObject: OpaquePointer?, _ argumentCount: Int32, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutableRawPointer?) -> JSValueRef
+    func JSObjectCallAsFunction(_ ctx: JSContextRef, _ object: OpaquePointer?, _ thisObject: OpaquePointer?, _ argumentCount: Int32, _ arguments: UnsafeMutablePointer<JSValueRef?>?, _ exception: UnsafeMutableRawPointer?) -> JSValueRef
 
     func JSClassCreate(_ cls: JSClassDefinition) -> JSClassRef
     func JSClassRetain(_ cls: JSClassRef) -> JSClassRef
