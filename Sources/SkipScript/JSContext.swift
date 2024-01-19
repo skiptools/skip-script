@@ -9,6 +9,9 @@ import Foundation
 import JavaScriptCore
 #else
 import SkipFFI
+
+/// Global pointer to the JSC library, equivalent to the Swift `JavaScriptCore` framework (`libjsc.so` on Android)
+let JavaScriptCore: JavaScriptCoreLibrary = JavaScriptCoreLibrary.instance
 #endif
 
 public typealias ExceptionPtr = UnsafeMutablePointer<JSValueRef?>
@@ -145,17 +148,21 @@ public class JSContext {
         }
     }
 
+    #endif
+
+    /// The global object.
+    public var global: JSValue {
+        JSValue(jsValueRef: JavaScriptCore.JSContextGetGlobalObject(context), in: self)
+    }
+
     /// Performs a JavaScript garbage collection.
     ///
     /// During JavaScript execution, you are not required to call this function; the JavaScript engine will garbage collect as needed.
     /// JavaScript values created within a context group are automatically destroyed when the last reference to the context group is released.
-    public func garbageCollect() { JSGarbageCollect(context) }
-
-    /// The global object.
-    public var global: JSValue {
-        JSValue(jsValueRef: JSContextGetGlobalObject(context), in: self)
+    public func garbageCollect() {
+        JavaScriptCore.JSGarbageCollect(context)
     }
-    #endif
+
 }
 
 /// A JSValue is a reference to a JavaScript value. 
@@ -208,7 +215,9 @@ public class JSValue {
             self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
 
         case let str as String:
-            self.value = JavaScriptCore.JSValueMakeString(context.context, JavaScriptCore.JSStringCreateWithUTF8CString(str))
+            let jstr = JavaScriptCore.JSStringCreateWithUTF8CString(str)
+            defer { JavaScriptCore.JSStringRelease(jstr) }
+            self.value = JavaScriptCore.JSValueMakeString(context.context, jstr)
 
         default:
             self.value = JavaScriptCore.JSValueMakeNull(context.context)
@@ -504,7 +513,12 @@ extension JSValue {
     /// - Parameters:
     ///   - context: The execution context to use.
     public convenience init(undefinedIn context: JSContext) {
+        #if !SKIP
         self.init(jsValueRef: JavaScriptCore.JSValueMakeUndefined(context.context), in: context)
+        #else
+        // Workaround for Skip error: "In Kotlin, delegating calls to 'self' or 'super' constructors can not use local variables other than the parameters passed to this constructor"
+        self.init(jsValueRef: JavaScriptCoreLibrary.instance.JSValueMakeUndefined(context.context), in: context)
+        #endif
     }
 
     /// Creates a JavaScript value of the `null` type.
@@ -521,7 +535,12 @@ extension JSValue {
     ///   - value: The value to assign to the object.
     ///   - context: The execution context to use.
     public convenience init(bool value: Bool, in context: JSContext) {
+        #if !SKIP
         self.init(jsValueRef: JavaScriptCore.JSValueMakeBoolean(context.context, value), in: context)
+        #else
+        // Workaround for Skip error: "In Kotlin, delegating calls to 'self' or 'super' constructors can not use local variables other than the parameters passed to this constructor"
+        self.init(jsValueRef: JavaScriptCoreLibrary.instance.JSValueMakeBoolean(context.context, value), in: context)
+        #endif
     }
 
     /// Creates a JavaScript value of the `Number` type.
@@ -530,7 +549,12 @@ extension JSValue {
     ///   - value: The value to assign to the object.
     ///   - context: The execution context to use.
     public convenience init(double value: Double, in context: JSContext) {
+        #if !SKIP
         self.init(jsValueRef: JavaScriptCore.JSValueMakeNumber(context.context, value), in: context)
+        #else
+        // Workaround for Skip error: "In Kotlin, delegating calls to 'self' or 'super' constructors can not use local variables other than the parameters passed to this constructor"
+        self.init(jsValueRef: JavaScriptCoreLibrary.instance.JSValueMakeNumber(context.context, value), in: context)
+        #endif
     }
 
     #if !SKIP
@@ -603,7 +627,12 @@ extension JSValue {
     /// - Parameters:
     ///   - context: The execution context to use.
     public convenience init(newObjectIn context: JSContext) {
+        #if !SKIP
         self.init(jsValueRef: JavaScriptCore.JSObjectMake(context.context, nil, nil), in: context)
+        #else
+        // Workaround for Skip error: "In Kotlin, delegating calls to 'self' or 'super' constructors can not use local variables other than the parameters passed to this constructor"
+        self.init(jsValueRef: JavaScriptCoreLibrary.instance.JSObjectMake(context.context, nil, nil), in: context)
+        #endif
     }
 
     /// Creates a JavaScript `Object` with prototype.
@@ -950,18 +979,6 @@ fileprivate extension Int {
 // workaround for Skip converting "JavaScriptCode.self.javaClass" to "(JavaScriptCoreLibrary::class.companionObjectInstance as JavaScriptCoreLibrary.Companion).java)"
 // SKIP INSERT: fun <T : Any> javaClass(kotlinClass: kotlin.reflect.KClass<T>): Class<T> { return kotlinClass.java }
 
-/// Global pointer to the JSC library, equivalent to the Swift `JavaScriptCore` framework (`libjsc.so` on Android?)
-let JavaScriptCore: JavaScriptCoreLibrary = {
-    let isAndroid = System.getProperty("java.vm.vendor") == "The Android Project"
-    if isAndroid {
-        //System.loadLibrary("icu")
-    }
-
-    // on Android we use the embedded libjsc.so; on macOS host, use the system JavaScriptCore
-    let jscName = isAndroid ? "jsc" : "JavaScriptCore"
-    return com.sun.jna.Native.load(jscName, javaClass(JavaScriptCoreLibrary.self))
-}()
-
 /// A JavaScript value. The base type for all JavaScript values, and polymorphic functions on them.
 typealias OpaqueJSValue = OpaquePointer
 typealias VoidPointer = OpaquePointer
@@ -992,75 +1009,88 @@ public typealias JSObjectConvertToTypeCallback = JSCallbackFunction // (*JSObjec
 
 
 /// A partial implementation of the JavaScriptCore C interface exposed as a JNA library.
-protocol JavaScriptCoreLibrary : com.sun.jna.Library {
-    func JSStringRetain(_ string: JSStringRef) -> JSStringRef
-    func JSStringRelease(_ string: JSStringRef)
-    func JSStringIsEqual(_ string1: JSStringRef, _ string2: JSStringRef) -> Bool
-    func JSStringGetLength(_ string: JSStringRef) -> Int
-    func JSStringGetMaximumUTF8CStringSize(_ string: JSStringRef) -> Int
-    func JSStringGetCharactersPtr(_ string: JSStringRef) -> OpaquePointer
-    func JSStringGetUTF8CString(_ string: JSStringRef, _ buffer: OpaquePointer, _ bufferSize: Int) -> Int
-    func JSStringCreateWithUTF8CString(_ string: String) -> JSStringRef
-    func JSStringIsEqualToUTF8CString(_ stringRef: JSStringRef, _ string: String) -> Bool
+final class JavaScriptCoreLibrary : com.sun.jna.Library {
+    public static let instance = JavaScriptCoreLibrary()
 
-    func JSGlobalContextCreate(_ globalObjectClass: JSValueRef?) -> JSContextRef
-    func JSGlobalContextRetain(_ ctx: JSContextRef)
-    func JSGlobalContextRelease(_ ctx: JSContextRef)
-    func JSContextGetGlobalObject(_ ctx: JSContextRef) -> JSObjectRef
+    /* SKIP EXTERN */ public func JSStringRetain(_ string: JSStringRef) -> JSStringRef
+    /* SKIP EXTERN */ public func JSStringRelease(_ string: JSStringRef)
+    /* SKIP EXTERN */ public func JSStringIsEqual(_ string1: JSStringRef, _ string2: JSStringRef) -> Bool
+    /* SKIP EXTERN */ public func JSStringGetLength(_ string: JSStringRef) -> Int
+    /* SKIP EXTERN */ public func JSStringGetMaximumUTF8CStringSize(_ string: JSStringRef) -> Int
+    /* SKIP EXTERN */ public func JSStringGetCharactersPtr(_ string: JSStringRef) -> OpaquePointer
+    /* SKIP EXTERN */ public func JSStringGetUTF8CString(_ string: JSStringRef, _ buffer: OpaquePointer, _ bufferSize: Int) -> Int
+    /* SKIP EXTERN */ public func JSStringCreateWithUTF8CString(_ string: String) -> JSStringRef
+    /* SKIP EXTERN */ public func JSStringIsEqualToUTF8CString(_ stringRef: JSStringRef, _ string: String) -> Bool
 
-    func JSEvaluateScript(_ ctx: JSContextRef, script: JSStringRef, thisObject: JSValueRef?, sourceURL: String?, startingLineNumber: Int, exception: ExceptionPtr?) -> JSValueRef
+    /* SKIP EXTERN */ public func JSGlobalContextCreate(_ globalObjectClass: JSValueRef?) -> JSContextRef
+    /* SKIP EXTERN */ public func JSGlobalContextRetain(_ ctx: JSContextRef)
+    /* SKIP EXTERN */ public func JSGlobalContextRelease(_ ctx: JSContextRef)
+    /* SKIP EXTERN */ public func JSContextGetGlobalObject(_ ctx: JSContextRef) -> JSObjectRef
 
-    func JSValueProtect(_ ctx: JSContextRef, _ value: JSValueRef)
-    func JSValueUnprotect(_ ctx: JSContextRef, _ value: JSValueRef)
-    func JSValueGetType(_ ctx: JSContextRef, _ value: JSValueRef) -> Int
+    /* SKIP EXTERN */ public func JSEvaluateScript(_ ctx: JSContextRef, script: JSStringRef, thisObject: JSValueRef?, sourceURL: String?, startingLineNumber: Int, exception: ExceptionPtr?) -> JSValueRef
 
-    func JSValueIsUndefined(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
-    func JSValueIsNull(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
-    func JSValueIsBoolean(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
-    func JSValueIsNumber(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
-    func JSValueIsString(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
-    func JSValueIsSymbol(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
-    func JSValueIsObject(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
-    func JSValueIsArray(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
-    func JSValueIsDate(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
+    /* SKIP EXTERN */ public func JSGarbageCollect(_ ctx: JSContextRef)
+    /* SKIP EXTERN */ public func JSValueProtect(_ ctx: JSContextRef, _ value: JSValueRef)
+    /* SKIP EXTERN */ public func JSValueUnprotect(_ ctx: JSContextRef, _ value: JSValueRef)
+    /* SKIP EXTERN */ public func JSValueGetType(_ ctx: JSContextRef, _ value: JSValueRef) -> Int
 
-    func JSValueIsEqual(_ ctx: JSContextRef, _ a: JSValueRef, _ b: JSValueRef, _ exception: ExceptionPtr?) -> Boolean
-    func JSValueIsStrictEqual(_ ctx: JSContextRef, _ a: JSValueRef, _ b: JSValueRef) -> Boolean
+    /* SKIP EXTERN */ public func JSValueIsUndefined(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
+    /* SKIP EXTERN */ public func JSValueIsNull(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
+    /* SKIP EXTERN */ public func JSValueIsBoolean(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
+    /* SKIP EXTERN */ public func JSValueIsNumber(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
+    /* SKIP EXTERN */ public func JSValueIsString(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
+    /* SKIP EXTERN */ public func JSValueIsSymbol(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
+    /* SKIP EXTERN */ public func JSValueIsObject(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
+    /* SKIP EXTERN */ public func JSValueIsArray(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
+    /* SKIP EXTERN */ public func JSValueIsDate(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
 
-    func JSValueIsInstanceOfConstructor(_ ctx: JSContextRef, _ value: JSValueRef, _ constructor: JSObjectRef, _ exception: ExceptionPtr?) -> Boolean
+    /* SKIP EXTERN */ public func JSValueIsEqual(_ ctx: JSContextRef, _ a: JSValueRef, _ b: JSValueRef, _ exception: ExceptionPtr?) -> Boolean
+    /* SKIP EXTERN */ public func JSValueIsStrictEqual(_ ctx: JSContextRef, _ a: JSValueRef, _ b: JSValueRef) -> Boolean
 
-    func JSValueToBoolean(_ ctx: JSContextRef, _ value: JSValueRef) -> Boolean
-    func JSValueToNumber(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: ExceptionPtr?) -> Double
-    func JSValueToStringCopy(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: ExceptionPtr?) -> JSStringRef
-    func JSValueToObject(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: ExceptionPtr?) -> JSObjectRef
+    /* SKIP EXTERN */ public func JSValueIsInstanceOfConstructor(_ ctx: JSContextRef, _ value: JSValueRef, _ constructor: JSObjectRef, _ exception: ExceptionPtr?) -> Boolean
 
-    func JSValueMakeUndefined(_ ctx: JSContextRef) -> JSValueRef
-    func JSValueMakeNull(_ ctx: JSContextRef) -> JSValueRef
-    func JSValueMakeBoolean(_ ctx: JSContextRef, _ value: Boolean) -> JSValueRef
-    func JSValueMakeNumber(_ ctx: JSContextRef, _ value: Double) -> JSValueRef
-    func JSValueMakeString(_ ctx: JSContextRef, _ value: JSStringRef) -> JSValueRef
-    func JSValueMakeSymbol(_ ctx: JSContextRef, _ value: JSStringRef) -> JSValueRef
-    func JSValueMakeFromJSONString(_ ctx: JSContextRef, _ json: JSStringRef) -> JSValueRef
-    func JSValueCreateJSONString(_ ctx: JSContextRef, _ value: JSValueRef, _ indent: UInt32, _ exception: ExceptionPtr?) -> JSStringRef
+    /* SKIP EXTERN */ public func JSValueToBoolean(_ ctx: JSContextRef, _ value: JSValueRef) -> Boolean
+    /* SKIP EXTERN */ public func JSValueToNumber(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: ExceptionPtr?) -> Double
+    /* SKIP EXTERN */ public func JSValueToStringCopy(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: ExceptionPtr?) -> JSStringRef
+    /* SKIP EXTERN */ public func JSValueToObject(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: ExceptionPtr?) -> JSObjectRef
 
-    func JSObjectGetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyName: JSStringRef, _ exception: ExceptionPtr?) -> JSValueRef
-    func JSObjectSetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, propertyName: JSStringRef, _ value: JSValueRef, _ attributes: JSPropertyAttributes, _ exception: ExceptionPtr?)
+    /* SKIP EXTERN */ public func JSValueMakeUndefined(_ ctx: JSContextRef) -> JSValueRef
+    /* SKIP EXTERN */ public func JSValueMakeNull(_ ctx: JSContextRef) -> JSValueRef
+    /* SKIP EXTERN */ public func JSValueMakeBoolean(_ ctx: JSContextRef, _ value: Boolean) -> JSValueRef
+    /* SKIP EXTERN */ public func JSValueMakeNumber(_ ctx: JSContextRef, _ value: Double) -> JSValueRef
+    /* SKIP EXTERN */ public func JSValueMakeString(_ ctx: JSContextRef, _ value: JSStringRef) -> JSValueRef
+    /* SKIP EXTERN */ public func JSValueMakeSymbol(_ ctx: JSContextRef, _ value: JSStringRef) -> JSValueRef
+    /* SKIP EXTERN */ public func JSValueMakeFromJSONString(_ ctx: JSContextRef, _ json: JSStringRef) -> JSValueRef
+    /* SKIP EXTERN */ public func JSValueCreateJSONString(_ ctx: JSContextRef, _ value: JSValueRef, _ indent: Int32, _ exception: ExceptionPtr?) -> JSStringRef
 
-    func JSObjectGetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyIndex: Int, _ exception: ExceptionPtr?) -> JSValueRef
-    func JSObjectSetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, propertyIndex: Int, _ value: JSValueRef, _ exception: ExceptionPtr?)
+    /* SKIP EXTERN */ public func JSObjectGetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyName: JSStringRef, _ exception: ExceptionPtr?) -> JSValueRef
+    /* SKIP EXTERN */ public func JSObjectSetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, propertyName: JSStringRef, _ value: JSValueRef, _ attributes: JSPropertyAttributes, _ exception: ExceptionPtr?)
 
-    func JSObjectMakeFunctionWithCallback(_ ctx: JSContextRef, _ name: JSStringRef, _ callAsFunction: JSObjectCallAsFunctionCallback) -> JSObjectRef
-    func JSObjectMake(_ ctx: JSContextRef, _ jsClass: JSClassRef?, _ data: OpaqueJSValue?) -> JSObjectRef
+    /* SKIP EXTERN */ public func JSObjectGetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyIndex: Int, _ exception: ExceptionPtr?) -> JSValueRef
+    /* SKIP EXTERN */ public func JSObjectSetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, propertyIndex: Int, _ value: JSValueRef, _ exception: ExceptionPtr?)
 
-    func JSObjectCallAsFunction(_ ctx: JSContextRef, _ object: OpaquePointer?, _ thisObject: OpaquePointer?, _ argumentCount: Int32, _ arguments: com.sun.jna.ptr.PointerByReference?, _ exception: ExceptionPtr?) -> JSValueRef
+    /* SKIP EXTERN */ public func JSObjectMakeFunctionWithCallback(_ ctx: JSContextRef, _ name: JSStringRef, _ callAsFunction: JSObjectCallAsFunctionCallback) -> JSObjectRef
+    /* SKIP EXTERN */ public func JSObjectMake(_ ctx: JSContextRef, _ jsClass: JSClassRef?, _ data: OpaqueJSValue?) -> JSObjectRef
 
-    func JSClassCreate(_ cls: JSClassDefinition) -> JSClassRef
-    func JSClassRetain(_ cls: JSClassRef) -> JSClassRef
-    func JSClassRelease(_ cls: JSClassRef) -> Void
+    /* SKIP EXTERN */ public func JSObjectCallAsFunction(_ ctx: JSContextRef, _ object: OpaquePointer?, _ thisObject: OpaquePointer?, _ argumentCount: Int32, _ arguments: com.sun.jna.ptr.PointerByReference?, _ exception: ExceptionPtr?) -> JSValueRef
 
-    func JSObjectSetPrivate(_ jsObject: JSObjectRef, _ privateData: VoidPointer?)
-    func JSObjectGetPrivate(_ jsObject: JSObjectRef) -> VoidPointer?
+    /* SKIP EXTERN */ public func JSClassCreate(_ cls: JSClassDefinition) -> JSClassRef
+    /* SKIP EXTERN */ public func JSClassRetain(_ cls: JSClassRef) -> JSClassRef
+    /* SKIP EXTERN */ public func JSClassRelease(_ cls: JSClassRef) -> Void
 
+    /* SKIP EXTERN */ public func JSObjectSetPrivate(_ jsObject: JSObjectRef, _ privateData: VoidPointer?)
+    /* SKIP EXTERN */ public func JSObjectGetPrivate(_ jsObject: JSObjectRef) -> VoidPointer?
+
+    private init() {
+        #if SKIP
+        let isAndroid = System.getProperty("java.vm.vendor") == "The Android Project"
+        // on Android we use the embedded libjsc.so; on macOS host, use the system JavaScriptCore
+        let jscName = isAndroid ? "jsc" : "JavaScriptCore"
+        //return com.sun.jna.Native.load(jscName, javaClass(JavaScriptCoreLibrary.self))
+        com.sun.jna.Native.register((JavaScriptCoreLibrary.self as kotlin.reflect.KClass).java, jscName)
+
+        #endif
+    }
 }
 
 // SKIP INSERT: @com.sun.jna.Structure.FieldOrder("version", "attributes", "className", "parentClass", "staticValues", "staticFunctions", "initialize", "finalize", "hasProperty", "getProperty", "setProperty", "deleteProperty", "getPropertyNames", "callAsFunction", "callAsConstructor", "hasInstance", "convertToType")
