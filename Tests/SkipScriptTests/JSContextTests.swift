@@ -76,11 +76,6 @@ class JSContextTests : XCTestCase {
     }
 
     func testIntl() throws {
-        if isAndroid {
-            // android-jsc-r245459.aar (13M) vs. android-jsc-intl-r245459.aar (24M)
-            throw XCTSkip("Android release is not linked to android-jsc-intl so i18n does not work")
-        }
-
         let ctx = try XCTUnwrap(JSContext())
 
         XCTAssertEqual("12,34 €", ctx.evaluateScript("new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(12.34)")?.toString())
@@ -88,11 +83,15 @@ class JSContextTests : XCTestCase {
         XCTAssertEqual("٦٥٫٤٣٢١", ctx.evaluateScript("new Intl.NumberFormat('ar-AR', { maximumSignificantDigits: 6 }).format(65.432123456789)")?.toString())
 
         let yen = "new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(45.678)"
-        // I'm guessing these are different values because they use combining marks differently
+        // these seem to be different values because they use combining marks differently
         #if os(Linux)
         XCTAssertEqual("￥46", ctx.evaluateScript(yen)?.toString())
         #else
-        XCTAssertEqual("¥46", ctx.evaluateScript(yen)?.toString())
+        if isAndroid {
+            XCTAssertEqual("￥46", ctx.evaluateScript(yen)?.toString())
+        } else {
+            XCTAssertEqual("¥46", ctx.evaluateScript(yen)?.toString())
+        }
         #endif
 
         XCTAssertEqual("10/24/2022", ctx.evaluateScript("new Intl.DateTimeFormat('en-US', {timeZone: 'UTC'}).format(new Date('2022-10-24'))")?.toString())
@@ -146,33 +145,15 @@ class JSContextTests : XCTestCase {
         ctx.setObject(10, forKeyedSubscript: "intProp" as NSString)
         XCTAssertEqual(10.0, ctx.objectForKeyedSubscript("intProp").toObject() as? Double)
 
-        if isAndroid || isJava {
-            throw XCTSkip("testJSCProperties fails on boolProp on CI")
-        }
+        XCTAssertEqual(nil, ctx.objectForKeyedSubscript("stringProp").toObject() as? String)
+        ctx.setObject("XYZ", forKeyedSubscript: "stringProp" as NSString)
+        XCTAssertEqual("XYZ", ctx.objectForKeyedSubscript("stringProp").toObject() as? String)
 
         ctx.setObject(true, forKeyedSubscript: "boolProp" as NSString)
         XCTAssertEqual(true, ctx.objectForKeyedSubscript("boolProp").toObject() as? Bool)
 
         ctx.setObject(false, forKeyedSubscript: "boolProp" as NSString)
         XCTAssertEqual(false, ctx.objectForKeyedSubscript("boolProp").toObject() as? Bool)
-
-        if isAndroid || isJava {
-            throw XCTSkip("testJSCProperties String arg crashes on JVM")
-        }
-
-        XCTAssertEqual(nil, ctx.objectForKeyedSubscript("stringProp").toObject() as? String)
-        ctx.setObject("XYZ", forKeyedSubscript: "stringProp" as NSString)
-        XCTAssertEqual("XYZ", ctx.objectForKeyedSubscript("stringProp").toObject() as? String)
-    }
-
-    func XXXtestJSCCallbacksMultiple() throws {
-        #if SKIP
-        com.sun.jna.Native.setProtected(true)
-        #endif
-
-        for _ in 1...100_000 {
-            try testJSCCallbacks()
-        }
     }
 
     func testJSCCallbacks() throws {

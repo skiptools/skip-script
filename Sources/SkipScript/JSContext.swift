@@ -36,7 +36,7 @@ public class JSContext {
         if let exception = exception {
             // errors are handled by returning nil and setting the current exception poinrts
             #if SKIP
-            let errorPtr: OpaquePointer? = exception.value
+            let errorPtr: JavaScriptCore.JSValueRef? = exception.value
             #else
             let errorPtr: JavaScriptCore.JSValueRef? = exception.pointee
             #endif
@@ -44,11 +44,15 @@ public class JSContext {
             if let error = errorPtr {
                 self.exception = JSValue(jsValueRef: error, in: self)
                 return false
+            } else {
+                // clear the current exception
+                self.exception = nil
             }
+        } else {
+            // clear the current exception
+            self.exception = nil
         }
 
-        // clear the current exception
-        self.exception = nil
         return true
     }
 
@@ -68,7 +72,7 @@ public class JSContext {
     }
 
     public func setObject(_ object: Any, forKeyedSubscript key: String) {
-        let propName = JavaScriptCore.JSStringCreateWithUTF8CString("key")
+        let propName = JavaScriptCore.JSStringCreateWithUTF8CString(key)
         defer { JavaScriptCore.JSStringRelease(propName) }
         let exception = ExceptionPtr(nil)
         let value = (object as? JSValue) ?? JSValue(object: object, in: self)
@@ -77,9 +81,8 @@ public class JSContext {
     }
 
     public func objectForKeyedSubscript(_ key: String) -> JSValue {
-        let propName = JavaScriptCore.JSStringCreateWithUTF8CString("key")
+        let propName = JavaScriptCore.JSStringCreateWithUTF8CString(key)
         defer { JavaScriptCore.JSStringRelease(propName) }
-
         let exception = ExceptionPtr(nil)
         let value = JavaScriptCore.JSObjectGetProperty(context, JavaScriptCore.JSContextGetGlobalObject(context), propName, exception)
         if !clearException(exception) {
@@ -205,7 +208,7 @@ public class JSValue {
             self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
 
         case let str as String:
-            self.value = JavaScriptCore.JSStringCreateWithUTF8CString(str)
+            self.value = JavaScriptCore.JSValueMakeString(context.context, JavaScriptCore.JSStringCreateWithUTF8CString(str))
 
         default:
             self.value = JavaScriptCore.JSValueMakeNull(context.context)

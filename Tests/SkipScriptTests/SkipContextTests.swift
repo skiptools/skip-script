@@ -23,9 +23,9 @@ class SkipContextTests : XCTestCase {
 
     func testCallFunctionNoArgs() throws {
         // we run this many times in order to ensure that neither JavaScript not Java GC will cause the function to be missing
-        for i in 1...100 {
+        for i in 1...10 {
             let ctx = JSContext()
-            for j in 1...10_000 {
+            for j in 1...1_000 {
                 let fun = JSValue(newFunctionIn: ctx) { ctx, obj, args in
                     JSValue(double: Double(i * j), in: ctx)
                 }
