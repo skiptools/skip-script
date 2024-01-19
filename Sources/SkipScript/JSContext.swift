@@ -7,18 +7,21 @@
 import Foundation
 // Non-Skip uses the JavaScriptCore symbols directly
 import JavaScriptCore
-public typealias ExceptionPtr = UnsafeMutablePointer<JSValueRef?>
 #else
 import SkipFFI
 #endif
+
+public typealias ExceptionPtr = UnsafeMutablePointer<JSValueRef?>
 
 /// A context for evaluating JavaScipt.
 public class JSContext {
     public let context: JSContextRef
     public private(set) var exception: JSValue? = nil
+    private var tryingRecursionGuard = false
 
     public init(jsGlobalContextRef context: JSContextRef) {
         self.context = context
+        JavaScriptCore.JSGlobalContextRetain(context)
     }
 
     public init() {
@@ -88,13 +91,11 @@ public class JSContext {
         }
     }
 
-    #if !SKIP
-    private var tryingRecursionGuard = false
-
     /// Attempts the operation whose failure is expected to set the given error pointer.
     ///
     /// When the error pointer is set, a ``JSError`` will be thrown.
-    func trying<T>(function: (UnsafeMutablePointer<JSValueRef?>) throws -> T?) throws -> T! {
+    func trying<T>(function: (ExceptionPtr) throws -> T) throws -> T {
+        #if !SKIP
         var errorPointer: JSValueRef?
         let result = try function(&errorPointer)
         if let errorPointer = errorPointer {
@@ -112,7 +113,15 @@ public class JSContext {
         } else {
             return result
         }
+        #else
+        let ptr = ExceptionPtr()
+        let result = try function(ptr)
+        // TODO: handle error pointer on Java side
+        return result
+        #endif
     }
+
+    #if !SKIP
 
     /// Checks for syntax errors in a string of JavaScript.
     ///
@@ -152,16 +161,18 @@ public class JSContext {
 public class JSValue {
     public let context: JSContext
     public let value: JSValueRef
+    private var functionCallback: JSFunctionInfo? = nil
 
     public init(jsValueRef: JSValueRef, in context: JSContext) {
-        JavaScriptCore.JSValueProtect(context.context, jsValueRef)
         self.context = context
         self.value = jsValueRef
+        JavaScriptCore.JSValueProtect(context.context, self.value)
     }
 
     public init(nullIn context: JSContext) {
         self.context = context
         self.value = JavaScriptCore.JSValueMakeNull(context.context)
+        JavaScriptCore.JSValueProtect(context.context, self.value)
     }
 
     public init(object obj: Any, in context: JSContext) {
@@ -199,6 +210,7 @@ public class JSValue {
         default:
             self.value = JavaScriptCore.JSValueMakeNull(context.context)
         }
+        JavaScriptCore.JSValueProtect(context.context, self.value)
     }
 
     /// Creates a JavaScript value of the function type.
@@ -209,11 +221,12 @@ public class JSValue {
     /// - Note: This object is callable as a function (due to `JSClassDefinition.callAsFunction`), but the JavaScript runtime doesn't treat it exactly like a function. For example, you cannot call "apply" on it. It could be better to use `JSObjectMakeFunctionWithCallback`, which may act more like a "true" JavaScript function.
     public init(newFunctionIn context: JSContext, callback: @escaping JSFunction) {
         var def = JSClassDefinition()
-        let callbackInfo = JSFunctionInfo(context: context, callback: callback)
         def.finalize = JSFunctionFinalize // JNA: JSFunctionFinalizeImpl()
         def.callAsConstructor = JSFunctionConstructor // JNA: JSFunctionConstructorImpl()
         def.callAsFunction = JSFunctionCallback // JNA: JSFunctionCallbackImpl()
         def.hasInstance = JSFunctionInstanceOf // JNA: JSFunctionInstanceOf()
+
+        let callbackInfo = JSFunctionInfo(context: context, callback: callback)
 
         #if !SKIP
         let info = UnsafeMutablePointer<JSFunctionInfo>.allocate(capacity: 1)
@@ -227,10 +240,9 @@ public class JSValue {
         defer { JavaScriptCore.JSClassRelease(cls) }
 
         let jsValueRef = JavaScriptCore.JSObjectMake(context.context, cls, info)
-        //self.init(jsValueRef: value, in: context)
-        JavaScriptCore.JSValueProtect(context.context, jsValueRef)
         self.context = context
         self.value = jsValueRef!
+        JavaScriptCore.JSValueProtect(context.context, self.value)
     }
 
     #if !SKIP
@@ -441,39 +453,38 @@ public class JSValue {
     ///   - arguments: The arguments to pass to the function.
     ///   - this: The object to use as `this`, or `nil` to use the global object as `this`.
     /// - Returns: The object that results from calling object as a function
-    @discardableResult public func call(withArguments arguments: [JSValue] = [], this: JSValue? = nil) -> JSValue {
-//        if !isFunction {
-//            // we should have already validated that it is a function
-//            throw JSError.valueNotFunction(self)
-//        }
-//        do {
-//            let resultRef = try context.trying {
-//                JSObjectCallAsFunction(context.contextRef, valueRef, this?.valueRef, arguments.count, arguments.isEmpty ? nil : arguments.map { $0.valueRef }, $0)
-//            }
-//            return resultRef.map({ JSValue(context: context, valueRef: $0) }) ?? JSValue(undefinedIn: context)
-//        } catch {
-//            throw JSError(cause: error, script: (try? self.string))
-//        }
+    @discardableResult public func call(withArguments arguments: [JSValue] = [], this: JSValue? = nil) throws -> JSValue {
+        //if !isFunction {
+        //    // we should have already validated that it is a function
+        //    throw JSError.valueNotFunction(self)
+        //}
 
-        // TODO: handle error
         #if !SKIP
-        guard let result = JavaScriptCore.JSObjectCallAsFunction(self.context.context, self.value, nil, arguments.count, arguments.map({ $0.value }), nil) else {
-            return JSValue(nullIn: self.context)
-        }
+        let args: Array<JSValueRef?>? = arguments.isEmpty ? nil : arguments.map(\.value)
         #else
+        //com.sun.jna.Native.setProtected(true)
+
+        // this should work as the argument since JNA should convert the pointer array, but it crashes
+        //let args: kotlin.Array<JSValueRef?>? = arguments.isEmpty ? nil : arguments.map(\.value).collection.toTypedArray()
+
         let pointerSize: Int32 = com.sun.jna.Native.POINTER_SIZE
         let size = Int64(arguments.count * pointerSize)
-        let argptr = com.sun.jna.Memory(size)
-        defer { argptr.clear(size) }
+        let argptr = arguments.count == 0 ? nil : com.sun.jna.Memory(size)
+        //defer { argptr?.clear(size) }
         for i in (0..<arguments.count) {
-            argptr.setPointer(i.toLong() * pointerSize, arguments[i].value)
+            argptr?.setPointer(i.toLong() * pointerSize, arguments[i].value)
         }
-        guard let result = JavaScriptCore.JSObjectCallAsFunction(self.context.context, self.value, nil, arguments.count, com.sun.jna.ptr.PointerByReference(argptr), nil) else {
-            return JSValue(nullIn: self.context)
-        }
+        let args = com.sun.jna.ptr.PointerByReference(argptr)
         #endif
 
-        return JSValue(jsValueRef: result, in: self.context)
+        let ctx = self.context
+        return try context.trying { (exception: ExceptionPtr) in
+            guard let result = JavaScriptCore.JSObjectCallAsFunction(ctx.context, self.value, nil, arguments.count, arguments.count == 0 ? nil : args, exception) else {
+                return JSValue(undefinedIn: ctx)
+            }
+
+            return JSValue(jsValueRef: result, in: ctx)
+        }
     }
 
     deinit {
@@ -633,9 +644,12 @@ private typealias JSFunctionInfo = _JSFunctionInfoHandle
 #else
 /// In Swift we stash the pointer to the `JSFunctionInfo` struct in the function object's private data, and then re-create it when we need it.
 /// We can't do that in JNA, since there isn't any way to recreate a Java instance from a JNA com.sun.jna.ptr.PointerByReference.
-/// So instead we use the private data of the function object to store an index in a global synchronized weak hash map. Ugh.
-// SKIP NOWARN
-private let _functionCallbacks = java.util.Collections.synchronizedMap(java.util.HashMap<Int64, _JSFunctionInfoHandle>())
+/// So instead we use the private data of the function object to store an index in a global synchronized weak hash map.
+/// Note that we intentionally key on the created JSFunctionInfo, because if it is garbage collected by Java, the underlying JSC representation will be backed by an empty value.
+private let _functionCallbacks: [JSFunctionInfo: _JSFunctionInfoHandle?] = [:]
+/// Internal global counter of all the registered functions, used as the key for the `_functionCallbacks` map.
+/// We start at 1 to ensure that the value is never zero (indicating that the underlying Java instance was garbage collected).
+private var _functionCounter: Int64 = 1
 
 // SKIP INSERT: @com.sun.jna.Structure.FieldOrder("id")
 public final class JSFunctionInfo : com.sun.jna.Structure {
@@ -643,10 +657,18 @@ public final class JSFunctionInfo : com.sun.jna.Structure {
     public var id: Int64 = 0
 
     /// Lookup the context by the global id
-    var context: JSContext? { _functionCallbacks[self.id]?.context }
+    var context: JSContext? {
+        synchronized(_functionCallbacks) {
+            return _functionCallbacks[self]?.context
+        }
+    }
 
     /// Lookup the callback by the global id
-    var callback: JSFunction? { _functionCallbacks[self.id]?.callback }
+    var callback: JSFunction? {
+        synchronized(_functionCallbacks) {
+            return _functionCallbacks[self]?.callback
+        }
+    }
 
     fileprivate init(ptr: OpaquePointer) {
         super.init(ptr)
@@ -654,16 +676,31 @@ public final class JSFunctionInfo : com.sun.jna.Structure {
     }
 
     init(context: JSContext, callback: JSFunction) {
-        self.id = kotlin.random.Random.nextLong()
-        write() // save id to the struct
         // ideally, we'd at least keep this in a per-context map rather than a global map, but then we'd have the same problem with restoring a java JSContext instance from a pointer, so we'd need to keep another global map around
-        _functionCallbacks[self.id] = _JSFunctionInfoHandle(context: context, callback: callback)
+        synchronized(_functionCallbacks) {
+            self.id = _functionCounter
+            _functionCounter += 1
+            _functionCallbacks[self] = _JSFunctionInfoHandle(context: context, callback: callback)
+        }
+        write() // save id to the struct
+    }
+
+    public override func equals(other: Any?) -> Bool {
+        (other as? JSFunctionInfo)?.id == self.id
+    }
+
+    public override func hashCode() -> Int {
+        id.hashCode()
     }
 
     /// Clear the global function pointer callback for this instance
     func clearCallback() {
-        _functionCallbacks[id] = nil
+        synchronized(_functionCallbacks) {
+            _functionCallbacks[self] = nil
+        }
     }
+
+
 }
 #endif
 
@@ -678,12 +715,14 @@ private final class JSFunctionCallbackImpl : JSCallbackFunction {
     public func JSFunctionCallback(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ this: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafeMutablePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
         guard let object = object,
               let data = JavaScriptCore.JSObjectGetPrivate(object) else {
+            preconditionFailure("SkipScript: unable to find private object data for \(object)")
             return nil
         }
 
         let info = JSFunctionInfo(ptr: data)
         guard let context = info.context,
               let callback = info.callback else {
+            preconditionFailure("SkipScript: unable to find context or callback for private object pointer \(data)")
             return nil
         }
 
@@ -703,9 +742,14 @@ private final class JSFunctionFinalizeImpl : JSCallbackFunction {
     public func JSFunctionFinalize(_ object: JSObjectRef?) -> Void {
         guard let object = object,
               let data = JavaScriptCore.JSObjectGetPrivate(object) else {
+            preconditionFailure("SkipScript: unable to find private object data for \(object)")
             return
         }
         let info = JSFunctionInfo(ptr: data)
+        if info.id == Int64(0) {
+            preconditionFailure("SkipScript: JSFunctionInfo id=0 from pointer: \(data)")
+        }
+
         // clear the info from the global map so we can finalize the function instance (and any references it contains)
         info.clearCallback()
     }
@@ -717,7 +761,7 @@ private final class JSFunctionInstanceOfImpl : JSCallbackFunction {
     }
 
     public func JSFunctionInstanceOf(_ jsc: JSContextRef?, _ constructor: JSObjectRef?, _ possibleInstance: JSValueRef?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> Bool {
-        print("### TODO: JSFunctionInstanceOf")
+        fatalError("### TODO: JSFunctionInstanceOf")
         return false
     }
 }
@@ -728,7 +772,7 @@ private final class JSFunctionConstructorImpl : JSCallbackFunction {
     }
 
     public func JSFunctionConstructor(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSObjectRef? {
-        print("### TODO: JSFunctionConstructor")
+        fatalError("### TODO: JSFunctionConstructor")
         return nil
     }
 }
@@ -921,8 +965,6 @@ typealias VoidPointer = OpaquePointer
 
 typealias JSValuePointer = UnsafeMutableRawPointer
 
-typealias ExceptionPtr = JSValuePointer
-
 typealias JSValueRef = OpaqueJSValue
 typealias JSStringRef = OpaqueJSValue
 typealias JSObjectRef = OpaqueJSValue
@@ -959,10 +1001,11 @@ protocol JavaScriptCoreLibrary : com.sun.jna.Library {
     func JSStringIsEqualToUTF8CString(_ stringRef: JSStringRef, _ string: String) -> Bool
 
     func JSGlobalContextCreate(_ globalObjectClass: JSValueRef?) -> JSContextRef
+    func JSGlobalContextRetain(_ ctx: JSContextRef)
     func JSGlobalContextRelease(_ ctx: JSContextRef)
     func JSContextGetGlobalObject(_ ctx: JSContextRef) -> JSObjectRef
 
-    func JSEvaluateScript(_ ctx: JSContextRef, script: JSStringRef, thisObject: JSValueRef?, sourceURL: String?, startingLineNumber: Int, exception: JSValuePointer) -> JSValueRef
+    func JSEvaluateScript(_ ctx: JSContextRef, script: JSStringRef, thisObject: JSValueRef?, sourceURL: String?, startingLineNumber: Int, exception: ExceptionPtr?) -> JSValueRef
 
     func JSValueProtect(_ ctx: JSContextRef, _ value: JSValueRef)
     func JSValueUnprotect(_ ctx: JSContextRef, _ value: JSValueRef)
@@ -978,15 +1021,15 @@ protocol JavaScriptCoreLibrary : com.sun.jna.Library {
     func JSValueIsArray(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
     func JSValueIsDate(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
 
-    func JSValueIsEqual(_ ctx: JSContextRef, _ a: JSValueRef, _ b: JSValueRef, _ exception: JSValuePointer) -> Boolean
+    func JSValueIsEqual(_ ctx: JSContextRef, _ a: JSValueRef, _ b: JSValueRef, _ exception: ExceptionPtr?) -> Boolean
     func JSValueIsStrictEqual(_ ctx: JSContextRef, _ a: JSValueRef, _ b: JSValueRef) -> Boolean
 
-    func JSValueIsInstanceOfConstructor(_ ctx: JSContextRef, _ value: JSValueRef, _ constructor: JSObjectRef, _ exception: JSValuePointer) -> Boolean
+    func JSValueIsInstanceOfConstructor(_ ctx: JSContextRef, _ value: JSValueRef, _ constructor: JSObjectRef, _ exception: ExceptionPtr?) -> Boolean
 
     func JSValueToBoolean(_ ctx: JSContextRef, _ value: JSValueRef) -> Boolean
-    func JSValueToNumber(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: JSValuePointer?) -> Double
-    func JSValueToStringCopy(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: JSValuePointer?) -> JSStringRef
-    func JSValueToObject(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: JSValuePointer?) -> JSObjectRef
+    func JSValueToNumber(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: ExceptionPtr?) -> Double
+    func JSValueToStringCopy(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: ExceptionPtr?) -> JSStringRef
+    func JSValueToObject(_ ctx: JSContextRef, _ value: JSValueRef, _ exception: ExceptionPtr?) -> JSObjectRef
 
     func JSValueMakeUndefined(_ ctx: JSContextRef) -> JSValueRef
     func JSValueMakeNull(_ ctx: JSContextRef) -> JSValueRef
@@ -995,18 +1038,18 @@ protocol JavaScriptCoreLibrary : com.sun.jna.Library {
     func JSValueMakeString(_ ctx: JSContextRef, _ value: JSStringRef) -> JSValueRef
     func JSValueMakeSymbol(_ ctx: JSContextRef, _ value: JSStringRef) -> JSValueRef
     func JSValueMakeFromJSONString(_ ctx: JSContextRef, _ json: JSStringRef) -> JSValueRef
-    func JSValueCreateJSONString(_ ctx: JSContextRef, _ value: JSValueRef, _ indent: UInt32, _ exception: JSValuePointer?) -> JSStringRef
+    func JSValueCreateJSONString(_ ctx: JSContextRef, _ value: JSValueRef, _ indent: UInt32, _ exception: ExceptionPtr?) -> JSStringRef
 
-    func JSObjectGetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyName: JSStringRef, _ exception: JSValuePointer?) -> JSValueRef
-    func JSObjectSetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, propertyName: JSStringRef, _ value: JSValueRef, _ attributes: JSPropertyAttributes, _ exception: JSValuePointer?)
+    func JSObjectGetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyName: JSStringRef, _ exception: ExceptionPtr?) -> JSValueRef
+    func JSObjectSetProperty(_ ctx: JSContextRef, _ obj: JSValueRef, propertyName: JSStringRef, _ value: JSValueRef, _ attributes: JSPropertyAttributes, _ exception: ExceptionPtr?)
 
-    func JSObjectGetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyIndex: Int, _ exception: JSValuePointer?) -> JSValueRef
-    func JSObjectSetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, propertyIndex: Int, _ value: JSValueRef, _ exception: JSValuePointer?)
+    func JSObjectGetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, _ propertyIndex: Int, _ exception: ExceptionPtr?) -> JSValueRef
+    func JSObjectSetPropertyAtIndex(_ ctx: JSContextRef, _ obj: JSValueRef, propertyIndex: Int, _ value: JSValueRef, _ exception: ExceptionPtr?)
 
     func JSObjectMakeFunctionWithCallback(_ ctx: JSContextRef, _ name: JSStringRef, _ callAsFunction: JSObjectCallAsFunctionCallback) -> JSObjectRef
     func JSObjectMake(_ ctx: JSContextRef, _ jsClass: JSClassRef?, _ data: OpaqueJSValue?) -> JSObjectRef
 
-    func JSObjectCallAsFunction(_ ctx: JSContextRef, _ object: OpaquePointer?, _ thisObject: OpaquePointer?, _ argumentCount: Int32, _ arguments: UnsafeMutablePointer<JSValueRef?>?, _ exception: UnsafeMutableRawPointer?) -> JSValueRef
+    func JSObjectCallAsFunction(_ ctx: JSContextRef, _ object: OpaquePointer?, _ thisObject: OpaquePointer?, _ argumentCount: Int32, _ arguments: com.sun.jna.ptr.PointerByReference?, _ exception: ExceptionPtr?) -> JSValueRef
 
     func JSClassCreate(_ cls: JSClassDefinition) -> JSClassRef
     func JSClassRetain(_ cls: JSClassRef) -> JSClassRef

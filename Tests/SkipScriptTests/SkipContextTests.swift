@@ -21,26 +21,34 @@ class SkipContextTests : XCTestCase {
         let _ = ctx.context
     }
 
-    func testFunctionCallback() throws {
-        for _ in 0...100 {
+    func testCallFunctionNoArgs() throws {
+        // we run this many times in order to ensure that neither JavaScript not Java GC will cause the function to be missing
+        for i in 1...100 {
             let ctx = JSContext()
-            let add = JSValue(newFunctionIn: ctx) { ctx, obj, args in
-                JSValue(double: args.reduce(0.0, { $0 + $1.toDouble() }), in: ctx)
-            }
-            for _ in 0...100 {
-                let num = Double.random(in: 0.0...1000.0)
-                if isAndroid {
-                    throw XCTSkip("testFunctionCallback crashes on Android emulator")
+            for j in 1...10_000 {
+                let fun = JSValue(newFunctionIn: ctx) { ctx, obj, args in
+                    JSValue(double: Double(i * j), in: ctx)
                 }
-                XCTAssertEqual(num + 3.0, add.call(withArguments: [JSValue(double: 3.0, in: ctx), JSValue(double: num, in: ctx)]).toDouble())
 
-                #if !SKIP
-                try ctx.global.setProperty("add", add)
-                let result = try XCTUnwrap(ctx.evaluateScript("add(1, 2, 3.4, 9.9)"))
-                XCTAssertFalse(result.isUndefined)
-                XCTAssertEqual(16.3, result.toDouble())
-                #endif
+                XCTAssertEqual(Double(i * j), try fun.call(withArguments: []).toDouble(), "#\(i)-\(j) failure") // e.g., 1-55577
             }
         }
+    }
+
+    func testCallFunction() throws {
+        let ctx = JSContext()
+        let sum = JSValue(newFunctionIn: ctx) { ctx, obj, args in
+            JSValue(double: args.reduce(0.0, { $0 + $1.toDouble() }), in: ctx)
+        }
+        let num = Double.random(in: 0.0...1000.0)
+        let args = [JSValue(double: 3.0, in: ctx), JSValue(double: num, in: ctx)]
+        XCTAssertEqual(num + 3.0, try sum.call(withArguments: args).toDouble())
+
+        #if !SKIP
+        try ctx.global.setProperty("sum", sum)
+        let result = try XCTUnwrap(ctx.evaluateScript("sum(1, 2, 3.4, 9.9)"))
+        XCTAssertFalse(result.isUndefined)
+        XCTAssertEqual(16.3, result.toDouble())
+        #endif
     }
 }

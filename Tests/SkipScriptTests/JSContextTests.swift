@@ -11,13 +11,6 @@ import XCTest
 import SkipFFI
 #endif
 
-/// True when running in a transpiled Java runtime environment
-let isJava = ProcessInfo.processInfo.environment["java.io.tmpdir"] != nil
-/// True when running within an Android environment (either an emulator or device)
-let isAndroid = isJava && ProcessInfo.processInfo.environment["ANDROID_ROOT"] != nil
-/// True is the transpiled code is currently running in the local Robolectric test environment
-let testJSCAPILow = isJava && !isAndroid
-
 /// Constant for callback testing
 let callbackResult = Double.pi
 
@@ -77,12 +70,9 @@ class JSContextTests : XCTestCase {
         XCTAssertEqual("wat1wat1wat1wat1wat1wat1wat1wat1wat1wat1wat1wat1wat1wat1wat1", try eval("Array(16).join('wat' + 1)").toString())
         XCTAssertEqual("NaNNaNNaNNaNNaNNaNNaNNaNNaNNaNNaNNaNNaNNaNNaN Batman!", try eval("Array(16).join('wat' - 1) + ' Batman!'").toString())
 
-        #if !SKIP // debug crashing on CI
         XCTAssertEqual(1, try eval("let y = {}; y[[]] = 1; Object.keys(y)").toArray().count)
-
         XCTAssertEqual(10.0, try eval("['10', '10', '10'].map(parseInt)").toArray().first as? Double)
         XCTAssertEqual(2.0, try eval("['10', '10', '10'].map(parseInt)").toArray().last as? Double)
-        #endif // !SKIP // debug crash
     }
 
     func testIntl() throws {
@@ -157,7 +147,7 @@ class JSContextTests : XCTestCase {
         XCTAssertEqual(10.0, ctx.objectForKeyedSubscript("intProp").toObject() as? Double)
 
         if isAndroid || isJava {
-            throw XCTSkip("testJSCProperties fais on boolProp on CI")
+            throw XCTSkip("testJSCProperties fails on boolProp on CI")
         }
 
         ctx.setObject(true, forKeyedSubscript: "boolProp" as NSString)
@@ -173,6 +163,16 @@ class JSContextTests : XCTestCase {
         XCTAssertEqual(nil, ctx.objectForKeyedSubscript("stringProp").toObject() as? String)
         ctx.setObject("XYZ", forKeyedSubscript: "stringProp" as NSString)
         XCTAssertEqual("XYZ", ctx.objectForKeyedSubscript("stringProp").toObject() as? String)
+    }
+
+    func XXXtestJSCCallbacksMultiple() throws {
+        #if SKIP
+        com.sun.jna.Native.setProtected(true)
+        #endif
+
+        for _ in 1...100_000 {
+            try testJSCCallbacks()
+        }
     }
 
     func testJSCCallbacks() throws {
