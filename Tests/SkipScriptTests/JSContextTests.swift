@@ -73,6 +73,14 @@ class JSContextTests : XCTestCase {
         XCTAssertEqual(1, try eval("let y = {}; y[[]] = 1; Object.keys(y)").toArray().count)
         XCTAssertEqual(10.0, try eval("['10', '10', '10'].map(parseInt)").toArray().first as? Double)
         XCTAssertEqual(2.0, try eval("['10', '10', '10'].map(parseInt)").toArray().last as? Double)
+
+        do {
+            let _ = try eval("throw 'Error message';")
+            XCTFail("eval should have thrown")
+        } catch {
+            // TODO: verify error message for skip.script.JSContextTests$JSEvalException
+            //XCTAssertEqual("", error.localizedDescription)
+        }
     }
 
     func testIntl() throws {

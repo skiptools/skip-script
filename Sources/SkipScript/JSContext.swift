@@ -74,29 +74,6 @@ public class JSContext {
         return JSValue(jsValueRef: result, in: self)
     }
 
-    public func setObject(_ object: Any, forKeyedSubscript key: String) {
-        let propName = JavaScriptCore.JSStringCreateWithUTF8CString(key)
-        defer { JavaScriptCore.JSStringRelease(propName) }
-        let exception = ExceptionPtr(nil)
-        let value = (object as? JSValue) ?? JSValue(object: object, in: self)
-        let valueRef = value.value
-        JavaScriptCore.JSObjectSetProperty(context, JavaScriptCore.JSContextGetGlobalObject(context), propName, valueRef, JSPropertyAttributes(kJSPropertyAttributeNone), exception)
-    }
-
-    public func objectForKeyedSubscript(_ key: String) -> JSValue {
-        let propName = JavaScriptCore.JSStringCreateWithUTF8CString(key)
-        defer { JavaScriptCore.JSStringRelease(propName) }
-        let exception = ExceptionPtr(nil)
-        let value = JavaScriptCore.JSObjectGetProperty(context, JavaScriptCore.JSContextGetGlobalObject(context), propName, exception)
-        if !clearException(exception) {
-            return JSValue(undefinedIn: self)
-        } else if let value = value {
-            return JSValue(jsValueRef: value, in: self)
-        } else {
-            return JSValue(nullIn: self)
-        }
-    }
-
     /// Attempts the operation whose failure is expected to set the given error pointer.
     ///
     /// When the error pointer is set, a ``JSError`` will be thrown.
@@ -165,7 +142,53 @@ public class JSContext {
 
 }
 
-/// A JSValue is a reference to a JavaScript value. 
+
+public protocol JSInstance {
+    var valueRef: JSValueRef { get }
+    var contextRef: JSContextRef { get }
+}
+
+extension JSContext : JSInstance {
+    public var valueRef: JSValueRef { self.global.value }
+    public var contextRef: JSContextRef { self.context }
+}
+
+
+extension JSValue : JSInstance {
+    public var valueRef: JSValueRef { self.value }
+    public var contextRef: JSContextRef { self.context.context }
+}
+
+
+extension JSInstance {
+
+    public func setObject(_ object: Any, forKeyedSubscript key: String) {
+        let propName = JavaScriptCore.JSStringCreateWithUTF8CString(key)
+        defer { JavaScriptCore.JSStringRelease(propName) }
+        let exception = ExceptionPtr(nil)
+        let value = (object as? JSValue) ?? JSValue(object: object, in: JSContext(jsGlobalContextRef: self.contextRef))
+        let valueRef = value.value
+        JavaScriptCore.JSObjectSetProperty(self.contextRef, self.valueRef, propName, valueRef, JSPropertyAttributes(kJSPropertyAttributeNone), exception)
+    }
+
+    public func objectForKeyedSubscript(_ key: String) -> JSValue {
+        let propName = JavaScriptCore.JSStringCreateWithUTF8CString(key)
+        defer { JavaScriptCore.JSStringRelease(propName) }
+        let exception = ExceptionPtr(nil)
+        let ctx = JSContext(jsGlobalContextRef: self.contextRef)
+        let value = JavaScriptCore.JSObjectGetProperty(self.contextRef, self.valueRef, propName, exception)
+        if !ctx.clearException(exception) {
+            return JSValue(undefinedIn: ctx)
+        } else if let value = value {
+            return JSValue(jsValueRef: value, in: ctx)
+        } else {
+            return JSValue(nullIn: ctx)
+        }
+    }
+
+}
+
+/// A JSValue is a reference to a JavaScript value.
 ///
 /// Every JSValue originates from a JSContext and holds a strong reference to it.
 public class JSValue {
@@ -307,9 +330,9 @@ public class JSValue {
     ///   - newValue: The value of the property.
     /// - Returns: The value itself.
     @discardableResult public func setProperty(_ key: String, _ newValue: JSValue) throws -> JSValue {
-//        if !isObject {
-//            throw JSError.valueNotPropertiesObject(self, property: key)
-//        }
+        if !isObject {
+            throw JSCError(message: "setProperty called on a non-object type")
+        }
 
         let property = JSStringCreateWithUTF8CString(key)
         defer { JSStringRelease(property) }
@@ -358,6 +381,30 @@ public class JSValue {
     public var isSymbol: Bool {
         JavaScriptCore.JSValueIsSymbol(context.context, value)
     }
+
+    /// Tests whether an object can be called as a function.
+    public var isFunction: Bool {
+        isObject && JavaScriptCore.JSObjectIsFunction(context.context, value)
+    }
+
+
+//    /// Tests whether a JavaScript value’s type is the `Promise` type by seeing it if is an instance of ``JXContext//promisePrototype``.
+//    ///
+//    /// See: [MDN Promise Documentation](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise)
+//    public var isPromise: Bool {
+//        get throws {
+//            try isInstance(of: context.promisePrototype)
+//        }
+//    }
+//
+//    /// Tests whether a JavaScript value’s type is the error type.
+//    public var isError: Bool {
+//        get throws {
+//            try isInstance(of: context.errorPrototype)
+//        }
+//    }
+
+
 
     public func toBool() -> Bool {
         JavaScriptCore.JSValueToBoolean(context.context, value)
@@ -466,10 +513,9 @@ public class JSValue {
     ///   - this: The object to use as `this`, or `nil` to use the global object as `this`.
     /// - Returns: The object that results from calling object as a function
     @discardableResult public func call(withArguments arguments: [JSValue] = [], this: JSValue? = nil) throws -> JSValue {
-        //if !isFunction {
-        //    // we should have already validated that it is a function
-        //    throw JSError.valueNotFunction(self)
-        //}
+        if !isFunction {
+            throw JSCError(message: "call invoked on a non-function type")
+        }
 
         #if !SKIP
         let args: Array<JSValueRef?>? = arguments.isEmpty ? nil : arguments.map(\.value)
@@ -661,6 +707,70 @@ extension JSValue {
 }
 
 
+public struct JSCError : Error {
+    let errorDescription: String
+
+    init(message errorDescription: String) {
+        self.errorDescription = errorDescription
+    }
+}
+
+
+/// An error thrown from JavaScript
+public struct JSError: Error, CustomStringConvertible {
+    public var errorMessage: String
+    public var errorCause: Error?
+    public var jsErrorString: String?
+    public var script: String?
+
+    public init(message: String, script: String? = nil, cause: Error? = nil, jsErrorString: String? = nil) {
+        self.errorMessage = message
+        self.script = script
+        self.errorCause = cause
+        self.jsErrorString = jsErrorString
+    }
+
+    #if !SKIP
+    // No support for JSErrorPeer from Skip at this point
+    public init(jsError: JSValue, script: String? = nil) {
+        if let cause = jsError.cause {
+            self.errorMessage = String(describing: cause)
+            self.script = script
+            self.errorCause = cause
+        } else {
+            self.errorMessage = jsError.toString()
+            self.script = script
+        }
+    }
+    #endif
+
+    public init(cause: Error, script: String? = nil) {
+        if let jserror = cause as? JSError {
+            self.errorMessage = jserror.errorMessage
+            self.script = jserror.script
+            self.jsErrorString = jserror.jsErrorString
+            self.script = jserror.script
+            if let script {
+                self.script = script
+            }
+        } else {
+            self.errorMessage = String(describing: cause)
+            self.script = script
+            self.errorCause = cause
+        }
+    }
+
+//    public var localizedDescription: String {
+//        return description
+//    }
+
+    public var description: String {
+        return errorMessage // + scriptDescription
+    }
+}
+
+
+
 /// A function definition, used when defining callbacks.
 public typealias JSFunction = (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) throws -> JSValue
 public typealias JSPromise = (promise: JSValue, resolveFunction: JSValue, rejectFunction: JSValue)
@@ -737,14 +847,36 @@ public final class JSFunctionInfo : com.sun.jna.Structure {
 #endif
 
 
-#if SKIP
+// MARK: JSFunctionCallback
+
+#if !SKIP
+
+private func JSFunctionCallback(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ this: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
+
+    let info = JSObjectGetPrivate(object).assumingMemoryBound(to: JSFunctionInfo.self)
+    let context = info.pointee.context
+
+    do {
+        let this = this.map { JSValue(jsValueRef: $0, in: context) }
+        let arguments = (0..<argumentCount).map { JSValue(jsValueRef: arguments![$0]!, in: context) }
+        let result = try info.pointee.callback(context, this, arguments)
+        return result.value
+    } catch {
+        let error = JSValue(newErrorFromCause: error, in: context)
+        exception?.pointee = error.value
+        return nil
+    }
+}
+
+#else
 
 private let JSFunctionCallback = JSFunctionCallbackImpl()
+
 private final class JSFunctionCallbackImpl : JSCallbackFunction {
     init() {
     }
 
-    public func JSFunctionCallback(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ this: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafeMutablePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
+    public func JSFunctionCallback(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ this: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
         guard let object = object,
               let data = JavaScriptCore.JSObjectGetPrivate(object) else {
             preconditionFailure("SkipScript: unable to find private object data for \(object)")
@@ -758,13 +890,29 @@ private final class JSFunctionCallbackImpl : JSCallbackFunction {
             return nil
         }
 
-        let argptrs = arguments?.value.getPointerArray(0, argumentCount)
-        let args = (0..<argumentCount).map { JSValue(jsValueRef: argptrs![$0], in: context) }
+        //let argptrs = argumentCount == 0 ? nil : arguments?.value.getPointerArray(0, argumentCount) // Crashes
+        let args = (0..<argumentCount).map {
+            JSValue(jsValueRef: arguments!.getPointer(0).getPointer(Int64($0 * com.sun.jna.Native.POINTER_SIZE)), in: context)
+        }
         let this = this.map { JSValue(jsValueRef: $0, in: context) }
         let value: JSValue = callback(context, this, args)
         return value.value
     }
 }
+
+#endif
+
+// MARK: JSFunctionFinalize
+
+#if !SKIP
+
+private func JSFunctionFinalize(_ object: JSObjectRef?) -> Void {
+    let info = JSObjectGetPrivate(object).assumingMemoryBound(to: JSFunctionInfo.self)
+    info.deinitialize(count: 1)
+    info.deallocate()
+}
+
+#else
 
 private let JSFunctionFinalize = JSFunctionFinalizeImpl()
 private final class JSFunctionFinalizeImpl : JSCallbackFunction {
@@ -787,6 +935,23 @@ private final class JSFunctionFinalizeImpl : JSCallbackFunction {
     }
 }
 
+#endif
+
+
+// MARK: JSFunctionInstanceOf
+
+#if !SKIP
+
+private func JSFunctionInstanceOf(_ jsc: JSContextRef?, _ constructor: JSObjectRef?, _ possibleInstance: JSValueRef?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> Bool {
+    let info = JSObjectGetPrivate(constructor).assumingMemoryBound(to: JSFunctionInfo.self)
+    let context = info.pointee.context
+    let pt1 = JSObjectGetPrototype(context.context, constructor)
+    let pt2 = JSObjectGetPrototype(context.context, possibleInstance)
+    return JSValueIsStrictEqual(context.context, pt1, pt2)
+}
+
+#else
+
 private let JSFunctionInstanceOf = JSFunctionInstanceOfImpl()
 private final class JSFunctionInstanceOfImpl : JSCallbackFunction {
     init() {
@@ -798,44 +963,11 @@ private final class JSFunctionInstanceOfImpl : JSCallbackFunction {
     }
 }
 
-private let JSFunctionConstructor = JSFunctionConstructorImpl()
-private final class JSFunctionConstructorImpl : JSCallbackFunction {
-    init() {
-    }
+#endif
 
-    public func JSFunctionConstructor(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSObjectRef? {
-        fatalError("### TODO: JSFunctionConstructor")
-        return nil
-    }
-}
+// MARK: JSFunctionConstructor
 
-
-#else
-
-// MARK: Support for JSValue(newFunctionIn:…)
-
-private func JSFunctionCallback(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ this: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
-
-    let info = JSObjectGetPrivate(object).assumingMemoryBound(to: JSFunctionInfo.self)
-    let context = info.pointee.context
-
-    do {
-        let this = this.map { JSValue(jsValueRef: $0, in: context) }
-        let arguments = (0..<argumentCount).map { JSValue(jsValueRef: arguments![$0]!, in: context) }
-        let result = try info.pointee.callback(context, this, arguments)
-        return result.value
-    } catch {
-        let error = JSValue(newErrorFromCause: error, in: context)
-        exception?.pointee = error.value
-        return nil
-    }
-}
-
-private func JSFunctionFinalize(_ object: JSObjectRef?) -> Void {
-    let info = JSObjectGetPrivate(object).assumingMemoryBound(to: JSFunctionInfo.self)
-    info.deinitialize(count: 1)
-    info.deallocate()
-}
+#if !SKIP
 
 private func JSFunctionConstructor(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSObjectRef? {
 
@@ -857,13 +989,23 @@ private func JSFunctionConstructor(_ jsc: JSContextRef?, _ object: JSObjectRef?,
     }
 }
 
-private func JSFunctionInstanceOf(_ jsc: JSContextRef?, _ constructor: JSObjectRef?, _ possibleInstance: JSValueRef?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> Bool {
-    let info = JSObjectGetPrivate(constructor).assumingMemoryBound(to: JSFunctionInfo.self)
-    let context = info.pointee.context
-    let pt1 = JSObjectGetPrototype(context.context, constructor)
-    let pt2 = JSObjectGetPrototype(context.context, possibleInstance)
-    return JSValueIsStrictEqual(context.context, pt1, pt2)
+#else
+
+private let JSFunctionConstructor = JSFunctionConstructorImpl()
+private final class JSFunctionConstructorImpl : JSCallbackFunction {
+    init() {
+    }
+
+    public func JSFunctionConstructor(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSObjectRef? {
+        fatalError("### TODO: JSFunctionConstructor")
+        return nil
+    }
 }
+
+#endif
+
+
+#if !SKIP
 
 /// Used internally to piggyback a native error as the peer of its wrapping JSValue error object.
 class JSErrorPeer {
@@ -872,32 +1014,6 @@ class JSErrorPeer {
     init(error: Error) {
         self.error = error
     }
-}
-
-extension JSValue {
-
-//    /// Tests whether a JavaScript value’s type is the `Promise` type by seeing it if is an instance of ``JXContext//promisePrototype``.
-//    ///
-//    /// See: [MDN Promise Documentation](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise)
-//    public var isPromise: Bool {
-//        get throws {
-//            try isInstance(of: context.promisePrototype)
-//        }
-//    }
-//
-//    /// Tests whether a JavaScript value’s type is the error type.
-//    public var isError: Bool {
-//        get throws {
-//            try isInstance(of: context.errorPrototype)
-//        }
-//    }
-
-
-    /// Tests whether an object can be called as a function.
-    public var isFunction: Bool {
-        isObject && JSObjectIsFunction(context.context, value)
-    }
-
 }
 
 extension JSValue {
@@ -924,47 +1040,6 @@ extension JSValue {
     }
 }
 
-
-/// An error thrown from JavaScript
-public struct JSError: Error, CustomStringConvertible, @unchecked Sendable {
-    public var message: String
-    public var cause: Error?
-    public var jsErrorString: String?
-    public var script: String?
-
-    public init(message: String, script: String? = nil) {
-        self.message = message
-        self.script = script
-    }
-
-    public init(jsError: JSValue, script: String? = nil) {
-        if let cause = jsError.cause {
-            self.init(cause: cause, script: script)
-        } else {
-            self.init(message: jsError.toString(), script: script)
-        }
-    }
-
-    public init(cause: Error, script: String? = nil) {
-        if let jserror = cause as? JSError {
-            self = jserror
-            if let script {
-                self.script = script
-            }
-        } else {
-            self.init(message: String(describing: cause), script: script)
-            self.cause = cause
-        }
-    }
-
-    public var localizedDescription: String {
-        return description
-    }
-
-    public var description: String {
-        return message // + scriptDescription
-    }
-}
 #endif
 
 #if SKIP
@@ -973,6 +1048,8 @@ fileprivate extension Int {
     var rawValue: Int { self }
 }
 #endif
+
+
 
 #if SKIP
 
@@ -1040,6 +1117,7 @@ final class JavaScriptCoreLibrary : com.sun.jna.Library {
     /* SKIP EXTERN */ public func JSValueIsNumber(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
     /* SKIP EXTERN */ public func JSValueIsString(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
     /* SKIP EXTERN */ public func JSValueIsSymbol(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
+    /* SKIP EXTERN */ public func JSObjectIsFunction(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
     /* SKIP EXTERN */ public func JSValueIsObject(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
     /* SKIP EXTERN */ public func JSValueIsArray(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool
     /* SKIP EXTERN */ public func JSValueIsDate(_ ctx: JSContextRef, _ value: JSValueRef) -> Bool

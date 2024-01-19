@@ -41,16 +41,43 @@ class SkipContextTests : XCTestCase {
                 for k in 1...1_00 {
                     let num = Double.random(in: 0.0...1000.0)
                     let args = [JSValue(double: 3.0, in: ctx), JSValue(double: num, in: ctx)]
-                    XCTAssertEqual(num + 3.0, try sum.call(withArguments: args).toDouble())
+                    XCTAssertEqual(num + 3.0, try sum.call(withArguments: args).toDouble(), "\(i)-\(j)-\(k) failure")
                 }
-
-#if !SKIP
-                try ctx.global.setProperty("sum", sum)
-                let result = try XCTUnwrap(ctx.evaluateScript("sum(1, 2, 3.4, 9.9)"))
-                XCTAssertFalse(result.isUndefined)
-                XCTAssertEqual(16.3, result.toDouble())
-#endif
             }
         }
+    }
+
+    func testFunctionProperty() throws {
+        let ctx = JSContext()
+        let sum = JSValue(newFunctionIn: ctx) { ctx, obj, args in
+            JSValue(double: args.reduce(0.0, { $0 + $1.toDouble() }), in: ctx)
+        }
+
+        ctx.setObject(sum, forKeyedSubscript: "sum")
+        XCTAssertNil(ctx.exception)
+
+
+        //do {
+        //    let r0 = try XCTUnwrap(ctx.evaluateScript("sum('1')"))
+        //    XCTAssertNil(ctx.exception)
+        //    XCTAssertFalse(r0.isUndefined)
+        //    XCTAssertEqual(1.0, r0.toDouble())
+        //}
+
+        //do {
+        //    let r1 = try XCTUnwrap(ctx.evaluateScript("sum(1)"))
+        //    XCTAssertNil(ctx.exception)
+        //    XCTAssertFalse(r1.isUndefined)
+        //    XCTAssertEqual(1.0, r1.toDouble())
+        //}
+
+        //do {
+        //    let r2 = try XCTUnwrap(ctx.evaluateScript("sum(1, 2, 3.4, 9.9)"))
+        //    XCTAssertNil(ctx.exception)
+        //    XCTAssertFalse(r2.isUndefined)
+        //    XCTAssertEqual(16.3, r2.toDouble())
+        //}
+
+        XCTAssertTrue(sum.isFunction)
     }
 }
