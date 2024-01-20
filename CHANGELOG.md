@@ -1,3 +1,14 @@
+## 0.3.5
+
+Released 2024-01-19
+
+  - Update test case
+  - Fix JNA mapping issues and update README
+  - Fix JNA mapping issues
+  - Use direct JNA mapping for JavaScriptCoreLibrary
+  - Fix String property values; use android-jsc-intl aar
+  - Fix memory handling for JSC function objects
+
 ## 0.3.4
 
 Released 2023-12-31
