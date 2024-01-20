@@ -29,7 +29,7 @@ assert(num.toDouble() == 3.3)
 
 On iOS and other Darwin platforms, the built-in `JavaScriptCore` libraries will be used. 
 
-Android, on the other handle, does not ship JSC as part of the operating system, and so the dependency on the Android side will utilize the `org.webkit:android-jsc` package to bundle a native build of JavaScriptCore with the app itself. This will increase the total `.apk` size by between 5-10Mb.
+Android, on the other hand, does not ship JSC as part of the operating system, and so the dependency on the Android side will utilize the `org.webkit:android-jsc` package to bundle a native build of JavaScriptCore with the app itself. This will increase the total Android bundle size by between 5-10Mb.
 
 
 ## Building
