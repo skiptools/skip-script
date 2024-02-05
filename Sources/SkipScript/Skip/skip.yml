@@ -1,3 +1,19 @@
+## skip.tools per-configuration file
+
+#skip:
+#  package: 'skip.script'
+
+# the blocks to add to the settings.gradle.kts
+settings:
+  contents:
+    - block: 'dependencyResolutionManagement'
+      contents:
+        - block: 'repositories'
+          contents:
+            # this is where the android-jsc libraries are hosted
+            - 'maven("https://maven.skip.tools")'
+
+# the blocks to add to the build.gradle.kts
 build:
   contents:
     - block: 'dependencies'
