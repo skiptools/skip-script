@@ -84,6 +84,9 @@ class JSContextTests : XCTestCase {
     }
 
     func testIntl() throws {
+        if isAndroid {
+            throw XCTSkip("testIntl disabled on Android due to not using android-jsc-intl") // adds 4+ meg per/arch (i.e., 20MB+ per build)
+        }
         let ctx = try XCTUnwrap(JSContext())
 
         XCTAssertEqual("12,34 €", ctx.evaluateScript("new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(12.34)")?.toString())
