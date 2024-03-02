@@ -1,3 +1,10 @@
+## 0.4.1
+
+Released 2024-03-02
+
+  - Use android-jsc rather than android-jsc-intl to reduct build size
+  - Remove top-level settings.gradle.kts
+
 ## 0.4.0
 
 Released 2024-02-05
