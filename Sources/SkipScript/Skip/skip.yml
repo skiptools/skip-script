@@ -20,5 +20,5 @@ build:
       contents:
         - 'implementation("org.webkit:android-jsc-cppruntime:r245459@aar")'
         # the -intl variant is bigger (24M vs. 13M), but it is needed for locale support
-        - 'implementation("org.webkit:android-jsc-intl:r245459@aar")'
-        #- 'implementation("org.webkit:android-jsc:r245459@aar")'
+        #- 'implementation("org.webkit:android-jsc-intl:r245459@aar")'
+        - 'implementation("org.webkit:android-jsc:r245459@aar")'
