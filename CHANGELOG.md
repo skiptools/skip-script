@@ -1,3 +1,12 @@
+## 0.5.0
+
+Released 2024-08-15
+
+  - Disable failing tests on Android emulator
+  - Bump dependencies
+  - ci: update workflow actions location
+  - Skip intl tests on Android due to exclusion of android-jsc-intl
+
 ## 0.4.1
 
 Released 2024-03-02
