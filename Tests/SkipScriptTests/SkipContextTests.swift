@@ -32,16 +32,19 @@ class SkipContextTests : XCTestCase {
 
     func testCallFunction() throws {
         // we run this many times in order to ensure that neither JavaScript GC nor Java GC will cause the function's struct/class being freed
-        for i in 1...10 {
+        for i in 1...100 {
             let ctx = JSContext()
             for j in 1...100 {
-                let sum = JSValue(newFunctionIn: ctx) { ctx, obj, args in
-                    JSValue(double: args.reduce(0.0, { $0 + $1.toDouble() }), in: ctx)
+                do {
+                    let sum = JSValue(newFunctionIn: ctx) { ctx, obj, args in
+                        JSValue(double: args.reduce(Double(i), { $0 + $1.toDouble() }), in: ctx)
+                    }
+                    ctx.setObject(sum, forKeyedSubscript: "sum")
                 }
                 for k in 1...100 {
                     let num = Double.random(in: 0.0...1000.0)
-                    let args = [JSValue(double: 3.0, in: ctx), JSValue(double: num, in: ctx)]
-                    XCTAssertEqual(num + 3.0, try sum.call(withArguments: args).toDouble(), "\(i)-\(j)-\(k) failure")
+                    let result = ctx.evaluateScript("sum(\(j), \(k), \(num))")
+                    XCTAssertEqual(Double(i) + Double(j) + Double(k) + num, result?.toDouble(), "\(i)-\(j)-\(k) failure")
                 }
             }
         }
