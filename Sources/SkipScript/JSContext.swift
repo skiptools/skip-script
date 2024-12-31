@@ -1164,9 +1164,10 @@ final class JavaScriptCoreLibrary : com.sun.jna.Library {
         let isAndroid = System.getProperty("java.vm.vendor") == "The Android Project"
         // on Android we use the embedded libjsc.so; on macOS host, use the system JavaScriptCore
         let jscName = isAndroid ? "jsc" : "JavaScriptCore"
-        //return com.sun.jna.Native.load(jscName, javaClass(JavaScriptCoreLibrary.self))
+        if isAndroid {
+            System.loadLibrary("c++_shared") // io.github.react-native-community:jsc-android-intl requires this, provided in com.facebook.fbjni:fbjni
+        }
         com.sun.jna.Native.register((JavaScriptCoreLibrary.self as kotlin.reflect.KClass).java, jscName)
-
         #endif
     }
 }

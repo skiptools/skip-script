@@ -4,21 +4,29 @@
 #  package: 'skip.script'
 
 # the blocks to add to the settings.gradle.kts
-settings:
-  contents:
-    - block: 'dependencyResolutionManagement'
-      contents:
-        - block: 'repositories'
-          contents:
-            # this is where the android-jsc libraries are hosted
-            - 'maven("https://maven.skip.tools")'
+# only needed for the https://maven.skip.tools build…
+#settings:
+#  contents:
+#    - block: 'dependencyResolutionManagement'
+#      contents:
+#        - block: 'repositories'
+#          contents:
+#            # this is where the android-jsc libraries are hosted
+#            - 'maven("https://maven.skip.tools")'
 
 # the blocks to add to the build.gradle.kts
 build:
   contents:
     - block: 'dependencies'
       contents:
-        - 'implementation("org.webkit:android-jsc-cppruntime:r245459@aar")'
+        # JSC is now on Maven central (https://github.com/facebook/react-native/pull/47972): https://repo1.maven.org/maven2/io/github/react-native-community/jsc-android/2026004.0.1/
+        - 'implementation("io.github.react-native-community:jsc-android-intl:2026004.0.1")'
+        - 'implementation("com.facebook.fbjni:fbjni:0.7.0")' # needed for libc++_shared.so, else no symbol "_ZNSt6__ndk122__libcpp_verbose_abortEPKcz"
+
+        # non-international version
+        #- 'implementation("io.github.react-native-community:jsc-android:2026004.0.1")'
+
+        #- 'implementation("org.webkit:android-jsc-cppruntime:r245459@aar")'
         # the -intl variant is bigger (24M vs. 13M), but it is needed for locale support
         #- 'implementation("org.webkit:android-jsc-intl:r245459@aar")'
-        - 'implementation("org.webkit:android-jsc:r245459@aar")'
+        #- 'implementation("org.webkit:android-jsc:r245459@aar")'
