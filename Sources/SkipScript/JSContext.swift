@@ -527,12 +527,11 @@ public class JSValue {
 
         let pointerSize: Int32 = com.sun.jna.Native.POINTER_SIZE
         let size = Int64(arguments.count * pointerSize)
-        let argptr = arguments.count == 0 ? nil : com.sun.jna.Memory(size)
-        //defer { argptr?.clear(size) }
+        let args = arguments.count == 0 ? nil : com.sun.jna.Memory(size)
+        defer { args?.clear(size) }
         for i in (0..<arguments.count) {
-            argptr?.setPointer(i.toLong() * pointerSize, arguments[i].value)
+            args!.setPointer(i.toLong() * pointerSize, arguments[i].value)
         }
-        let args = com.sun.jna.ptr.PointerByReference(argptr)
         #endif
 
         let ctx = self.context
@@ -706,6 +705,15 @@ extension JSValue {
 //    }
 }
 
+#if SKIP
+// workaround for inability to implement this as a convenience constructor due to needing local variables: In Kotlin, delegating calls to 'self' or 'super' constructors can not use local variables other than the parameters passed to this constructor
+public func JSValue(string value: String, in context: JSContext) -> JSValue {
+    let str = JavaScriptCore.JSStringCreateWithUTF8CString(value)
+    defer { JavaScriptCore.JSStringRelease(str) }
+    return JSValue(jsValueRef: JavaScriptCore.JSValueMakeString(context.context, str), in: context)
+}
+#endif
+
 
 public struct JSCError : Error {
     let errorDescription: String
@@ -876,7 +884,7 @@ private final class JSFunctionCallbackImpl : JSCallbackFunction {
     init() {
     }
 
-    public func JSFunctionCallback(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ this: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
+    public func callback(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ this: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
         guard let object = object,
               let data = JavaScriptCore.JSObjectGetPrivate(object) else {
             preconditionFailure("SkipScript: unable to find private object data for \(object)")
@@ -890,9 +898,9 @@ private final class JSFunctionCallbackImpl : JSCallbackFunction {
             return nil
         }
 
-        //let argptrs = argumentCount == 0 ? nil : arguments?.value.getPointerArray(0, argumentCount) // Crashes
-        let args = (0..<argumentCount).map {
-            JSValue(jsValueRef: arguments!.getPointer(0).getPointer(Int64($0 * com.sun.jna.Native.POINTER_SIZE)), in: context)
+        let argptrs = argumentCount == 0 ? nil : arguments!.getPointerArray(0, argumentCount)
+        let args: [JSValue] = (0..<argumentCount).map {
+            JSValue(jsValueRef: argptrs![$0], in: context)
         }
         let this = this.map { JSValue(jsValueRef: $0, in: context) }
         let value: JSValue = callback(context, this, args)
@@ -919,7 +927,7 @@ private final class JSFunctionFinalizeImpl : JSCallbackFunction {
     init() {
     }
 
-    public func JSFunctionFinalize(_ object: JSObjectRef?) -> Void {
+    public func callback(_ object: JSObjectRef?) -> Void {
         guard let object = object,
               let data = JavaScriptCore.JSObjectGetPrivate(object) else {
             preconditionFailure("SkipScript: unable to find private object data for \(object)")
@@ -957,7 +965,7 @@ private final class JSFunctionInstanceOfImpl : JSCallbackFunction {
     init() {
     }
 
-    public func JSFunctionInstanceOf(_ jsc: JSContextRef?, _ constructor: JSObjectRef?, _ possibleInstance: JSValueRef?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> Bool {
+    public func callback(_ jsc: JSContextRef?, _ constructor: JSObjectRef?, _ possibleInstance: JSValueRef?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> Bool {
         fatalError("### TODO: JSFunctionInstanceOf")
         return false
     }
@@ -996,7 +1004,7 @@ private final class JSFunctionConstructorImpl : JSCallbackFunction {
     init() {
     }
 
-    public func JSFunctionConstructor(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSObjectRef? {
+    public func callback(_ jsc: JSContextRef?, _ object: JSObjectRef?, _ argumentCount: Int, _ arguments: UnsafePointer<JSValueRef?>?, _ exception: UnsafeMutablePointer<JSValueRef?>?) -> JSObjectRef? {
         fatalError("### TODO: JSFunctionConstructor")
         return nil
     }
@@ -1150,7 +1158,7 @@ final class JavaScriptCoreLibrary : com.sun.jna.Library {
     /* SKIP EXTERN */ public func JSObjectMakeFunctionWithCallback(_ ctx: JSContextRef, _ name: JSStringRef, _ callAsFunction: JSObjectCallAsFunctionCallback) -> JSObjectRef
     /* SKIP EXTERN */ public func JSObjectMake(_ ctx: JSContextRef, _ jsClass: JSClassRef?, _ data: OpaqueJSValue?) -> JSObjectRef
 
-    /* SKIP EXTERN */ public func JSObjectCallAsFunction(_ ctx: JSContextRef, _ object: OpaquePointer?, _ thisObject: OpaquePointer?, _ argumentCount: Int32, _ arguments: com.sun.jna.ptr.PointerByReference?, _ exception: ExceptionPtr?) -> JSValueRef
+    /* SKIP EXTERN */ public func JSObjectCallAsFunction(_ ctx: JSContextRef, _ object: OpaquePointer?, _ thisObject: OpaquePointer?, _ argumentCount: Int32, _ arguments: OpaquePointer?, _ exception: ExceptionPtr?) -> JSValueRef
 
     /* SKIP EXTERN */ public func JSClassCreate(_ cls: JSClassDefinition) -> JSClassRef
     /* SKIP EXTERN */ public func JSClassRetain(_ cls: JSClassRef) -> JSClassRef
@@ -1164,9 +1172,10 @@ final class JavaScriptCoreLibrary : com.sun.jna.Library {
         let isAndroid = System.getProperty("java.vm.vendor") == "The Android Project"
         // on Android we use the embedded libjsc.so; on macOS host, use the system JavaScriptCore
         let jscName = isAndroid ? "jsc" : "JavaScriptCore"
-        //return com.sun.jna.Native.load(jscName, javaClass(JavaScriptCoreLibrary.self))
+        if isAndroid {
+            System.loadLibrary("c++_shared") // io.github.react-native-community:jsc-android-intl requires this, provided in com.facebook.fbjni:fbjni
+        }
         com.sun.jna.Native.register((JavaScriptCoreLibrary.self as kotlin.reflect.KClass).java, jscName)
-
         #endif
     }
 }
