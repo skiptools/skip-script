@@ -1,3 +1,27 @@
+## 0.6.0
+
+Released 2024-12-31
+
+  - Merge pull request #1 from skiptools/jsc-react-native-community
+  - Resolve issues with function values
+  - Switch to build provided by react-native-community maven group
+
+## 0.6.0
+
+Released 2024-12-31
+
+  - Merge pull request #1 from skiptools/jsc-react-native-community
+  - Resolve issues with function values
+  - Switch to build provided by react-native-community maven group
+
+## 0.5.1
+
+Released 2024-12-31
+
+  - Merge pull request #1 from skiptools/jsc-react-native-community
+  - Resolve issues with function values
+  - Switch to build provided by react-native-community maven group
+
 ## 0.5.0
 
 Released 2024-08-15
