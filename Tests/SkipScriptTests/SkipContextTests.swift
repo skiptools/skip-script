@@ -43,8 +43,9 @@ class SkipContextTests : XCTestCase {
                 }
                 for k in 1...100 {
                     let num = Double.random(in: 0.0...1000.0)
-                    let result = ctx.evaluateScript("sum(\(j), \(k), \(num))")
-                    XCTAssertEqual(Double(i) + Double(j) + Double(k) + num, result?.toDouble(), "\(i)-\(j)-\(k) failure")
+                    let args = [JSValue(double: Double(j), in: ctx), JSValue(double: Double(k), in: ctx), JSValue(double: num, in: ctx)]
+                    let result = try ctx.objectForKeyedSubscript("sum").call(withArguments: args)
+                    XCTAssertEqual(Double(i) + Double(j) + Double(k) + num, result.toDouble(), "\(i)-\(j)-\(k) failure")
                 }
             }
         }
@@ -59,7 +60,6 @@ class SkipContextTests : XCTestCase {
         ctx.setObject(stringify, forKeyedSubscript: "stringify")
         XCTAssertEqual("", ctx.evaluateScript("stringify()")?.toString())
 
-        // call with args crashes on Android with SIGSEGV with Problematic frame: [jna9291175543343818311.tmp+0x7448]  Java_com_sun_jna_Native__1getPointer+0x0
         XCTAssertEqual("", ctx.evaluateScript("stringify('')")?.toString())
         XCTAssertEqual("ABC", ctx.evaluateScript("stringify('A', 'BC')")?.toString())
         XCTAssertEqual("true12X", ctx.evaluateScript("stringify(true, 1, 2, 'X')")?.toString())
@@ -103,9 +103,16 @@ class SkipContextTests : XCTestCase {
                 XCTAssertFalse(r0.isUndefined)
                 XCTAssertEqual(1.0, r0.toDouble())
             }
-        }
 
-        XCTAssertTrue(sum.isFunction)
-        XCTAssertTrue(ctx.objectForKeyedSubscript("ob").objectForKeyedSubscript("sum").isFunction)
+            do {
+                // call with many args
+                XCTAssertTrue(sum.isFunction)
+                let sumf = ctx.objectForKeyedSubscript("ob").objectForKeyedSubscript("sum")
+                XCTAssertTrue(sumf.isFunction)
+                let args = (1..<1_000).map({ JSValue(double: Double($0), in: ctx) })
+                let result = try sumf.call(withArguments: args)
+                XCTAssertEqual(499_500.0, result.toDouble())
+            }
+        }
     }
 }
