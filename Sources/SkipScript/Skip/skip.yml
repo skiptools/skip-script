@@ -20,11 +20,9 @@ build:
     - block: 'dependencies'
       contents:
         # JSC is now on Maven central (https://github.com/facebook/react-native/pull/47972): https://repo1.maven.org/maven2/io/github/react-native-community/jsc-android/2026004.0.1/
-        - 'implementation("io.github.react-native-community:jsc-android-intl:2026004.0.1")'
+        - 'implementation("io.github.react-native-community:jsc-android:2026004.0.1")' # 26.9 MB
+        #- 'implementation("io.github.react-native-community:jsc-android-intl:2026004.0.1")' # international version: 53.7 MB
         - 'implementation("com.facebook.fbjni:fbjni:0.7.0")' # needed for libc++_shared.so, else no symbol "_ZNSt6__ndk122__libcpp_verbose_abortEPKcz"
-
-        # non-international version
-        #- 'implementation("io.github.react-native-community:jsc-android:2026004.0.1")'
 
         #- 'implementation("org.webkit:android-jsc-cppruntime:r245459@aar")'
         # the -intl variant is bigger (24M vs. 13M), but it is needed for locale support

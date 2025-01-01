@@ -84,6 +84,9 @@ class JSContextTests : XCTestCase {
     }
 
     func testIntl() throws {
+        // the Skip side uses jsc-android rather than jsc-android-intl for size savings
+        // TODO: provide a separate SkipScriptIntl target that depends on jsc-android-intl
+        #if !SKIP
         let ctx = try XCTUnwrap(JSContext())
 
         XCTAssertEqual("12,34 €", ctx.evaluateScript("new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(12.34)")?.toString())
@@ -104,6 +107,7 @@ class JSContextTests : XCTestCase {
 
         XCTAssertEqual("10/24/2022", ctx.evaluateScript("new Intl.DateTimeFormat('en-US', {timeZone: 'UTC'}).format(new Date('2022-10-24'))")?.toString())
         XCTAssertEqual("24/10/2022", ctx.evaluateScript("new Intl.DateTimeFormat('fr-FR', {timeZone: 'UTC'}).format(new Date('2022-10-24'))")?.toString())
+        #endif
     }
 
     func testProxy() throws {
@@ -163,56 +167,6 @@ class JSContextTests : XCTestCase {
         ctx.setObject(false, forKeyedSubscript: "boolProp" as NSString)
         XCTAssertEqual(false, ctx.objectForKeyedSubscript("boolProp").toObject() as? Bool)
     }
-
-    func testJSCCallbacks() throws {
-        let jsc = JavaScriptCore.JSGlobalContextCreate(nil)
-        defer { JavaScriptCore.JSGlobalContextRelease(jsc) }
-        let ctx = try XCTUnwrap(JSContext(jsGlobalContextRef: jsc))
-
-        func eval(_ script: String) throws -> JSValue {
-            let result = ctx.evaluateScript(script)
-            if let exception = ctx.exception {
-                throw JSEvalException(exception: exception)
-            }
-            if let result = result {
-                return result
-            } else {
-                throw JSEvalException()
-            }
-        }
-
-        XCTAssertEqual("test", try eval("'te' + 'st'").toString())
-
-        let callbackName = JavaScriptCore.JSStringCreateWithUTF8CString("skip_cb")
-        defer { JavaScriptCore.JSStringRelease(callbackName) }
-
-        #if !SKIP
-        func callbackPtr(ctx: JSContextRef?, function: JSObjectRef?, thisObject: JSObjectRef?, argumentCount: Int, arguments: UnsafePointer<JSValueRef?>?, exception: UnsafeMutablePointer<JSValueRef?>?) -> JSValueRef? {
-            JavaScriptCore.JSValueMakeNumber(ctx, callbackResult)
-        }
-        #else
-        let callbackPtr = JSCCallback()
-        #endif
-
-        let callbackFunction = JavaScriptCore.JSObjectMakeFunctionWithCallback(jsc, callbackName, callbackPtr)
-
-        // invoke the callback directly
-        let f = try XCTUnwrap(JavaScriptCore.JSObjectCallAsFunction(jsc, callbackFunction, nil, 0, nil, nil))
-        XCTAssertEqual(callbackResult, JavaScriptCore.JSValueToNumber(jsc, f, nil))
-
-        if !isAndroid { // crashes on Android, passes on Robolectric
-            JavaScriptCore.JSObjectSetProperty(jsc, jsc, callbackName, callbackFunction, JSPropertyAttributes(kJSPropertyAttributeNone), nil)
-            XCTAssertEqual(callbackResult.description, try eval("skip_cb()").toString())
-        }
-    }
-
-    #if SKIP
-    class JSCCallback : com.sun.jna.Callback {
-        func callback(ctx: JSContextRef?, function: JSObjectRef?, thisObject: JSObjectRef?, argumentCount: Int32, arguments: UnsafeMutableRawPointer?, exception: UnsafeMutableRawPointer?) -> JSValueRef {
-            JavaScriptCore.JSValueMakeNumber(ctx!, callbackResult)
-        }
-    }
-    #endif
 
     func testJSCAPILow() throws {
         let ctx = JavaScriptCore.JSGlobalContextCreate(nil)

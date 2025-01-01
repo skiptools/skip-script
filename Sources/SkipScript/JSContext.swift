@@ -194,7 +194,6 @@ extension JSInstance {
 public class JSValue {
     public let context: JSContext
     public let value: JSValueRef
-    private var functionCallback: JSFunctionInfo? = nil
 
     public init(jsValueRef: JSValueRef, in context: JSContext) {
         self.context = context
