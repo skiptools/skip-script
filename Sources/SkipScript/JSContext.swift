@@ -546,24 +546,7 @@ public class JSValue {
     }
 
     deinit {
-        // this has been seen to raise an exception on the Android emulator when not setting `JSC_useJIT`:
-        // java.util.concurrent.TimeoutException: skip.script.JSValue.finalize() timed out after 10 seconds
-        // it has also led to crashes:
-        /*
-         02-06 14:33:12.996  2016  2016 F DEBUG   :       #00 pc 000000000028ff90  /data/app/~~HElSLsP99NS9XFzsCODJmA==/skip.script.test-v4AHg-MWsLEjjHmmm5YC7w==/base.apk!libjsc.so (offset 0x2aa8000) (JSValueUnprotect+16) (BuildId: ca8f87b98242c913dfdaa146cce2a24b070804a2)
-         02-06 14:33:12.996  2016  2016 F DEBUG   :       #01 pc 0000000000012051  /data/app/~~HElSLsP99NS9XFzsCODJmA==/skip.script.test-v4AHg-MWsLEjjHmmm5YC7w==/base.apk (offset 0x2a88000) (BuildId: 93b2f9545d27a84372ca7fba3b2b473c2f9c6edd)
-         02-06 14:33:12.996  2016  2016 F DEBUG   :       #02 pc 0000000000011032  /data/app/~~HElSLsP99NS9XFzsCODJmA==/skip.script.test-v4AHg-MWsLEjjHmmm5YC7w==/base.apk (offset 0x2a88000) (BuildId: 93b2f9545d27a84372ca7fba3b2b473c2f9c6edd)
-         02-06 14:33:12.996  2016  2016 F DEBUG   :       #03 pc 000000000001174b  /data/app/~~HElSLsP99NS9XFzsCODJmA==/skip.script.test-v4AHg-MWsLEjjHmmm5YC7w==/base.apk (offset 0x2a88000) (ffi_call+219) (BuildId: 93b2f9545d27a84372ca7fba3b2b473c2f9c6edd)
-         02-06 14:33:12.996  2016  2016 F DEBUG   :       #04 pc 0000000000007264  /data/app/~~HElSLsP99NS9XFzsCODJmA==/skip.script.test-v4AHg-MWsLEjjHmmm5YC7w==/base.apk (offset 0x2a88000) (BuildId: 93b2f9545d27a84372ca7fba3b2b473c2f9c6edd)
-         02-06 14:33:12.996  2016  2016 F DEBUG   :       #05 pc 0000000000011a17  /data/app/~~HElSLsP99NS9XFzsCODJmA==/skip.script.test-v4AHg-MWsLEjjHmmm5YC7w==/base.apk (offset 0x2a88000) (BuildId: 93b2f9545d27a84372ca7fba3b2b473c2f9c6edd)
-         02-06 14:33:12.997  2016  2016 F DEBUG   :       #06 pc 00000000000121e7  /data/app/~~HElSLsP99NS9XFzsCODJmA==/skip.script.test-v4AHg-MWsLEjjHmmm5YC7w==/base.apk (offset 0x2a88000) (BuildId: 93b2f9545d27a84372ca7fba3b2b473c2f9c6edd)
-         02-06 14:33:12.997  2016  2016 F DEBUG   :       #07 pc 000000000200d1de  /memfd:jit-cache (deleted) (offset 0x2000000) (art_jni_trampoline+222)
-         02-06 14:33:12.997  2016  2016 F DEBUG   :       #08 pc 000000000202ee59  /memfd:jit-cache (deleted) (offset 0x2000000) (skip.script.JSValue.finalize+121)
-         02-06 14:33:12.997  2016  2016 F DEBUG   :       #09 pc 000000000202f070  /memfd:jit-cache (deleted) (offset 0x2000000) (java.lang.Daemons$FinalizerDaemon.doFinalize+112)
-         02-06 14:33:12.997  2016  2016 F DEBUG   :       #10 pc 000000000202b42f  /memfd:jit-cache (deleted) (offset 0x2000000) (java.lang.Daemons$FinalizerDaemon.runInternal+511)
-         02-06 14:33:12.997  2016  2016 F DEBUG   :       #11 pc 0000000000185e6b  /apex/com.android.art/lib64/libart.so (art_quick_osr_stub+27) (BuildId: 1dfb27162fe62a7ac7a10ea361233369)
-         02-06 14:33:12.997  2016  2016 F DEBUG   :       #12 pc 00000000003d27ba  /apex/com.android.art/lib64/libart.so (art::jit::Jit::MaybeDoOnStackReplacement(art::Thread*, art::ArtMethod*, unsigned int, int, art::JValue*)+410) (BuildId: 1dfb27162fe62a7ac7a10ea361233369)
-         */
+        // This can crash on Android if we do not guard for a released context
         if !context.released {
             JavaScriptCore.JSValueUnprotect(context.context, value)
         }
