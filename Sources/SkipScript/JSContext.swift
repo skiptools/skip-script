@@ -21,6 +21,7 @@ public class JSContext {
     public let context: JSContextRef
     public private(set) var exception: JSValue? = nil
     private var tryingRecursionGuard = false
+    var released = false
 
     public init(jsGlobalContextRef context: JSContextRef) {
         self.context = context
@@ -33,6 +34,7 @@ public class JSContext {
 
     deinit {
         JavaScriptCore.JSGlobalContextRelease(context)
+        self.released = true
     }
 
     @discardableResult fileprivate func clearException(_ exception: ExceptionPtr? = nil) -> Bool {
@@ -562,7 +564,9 @@ public class JSValue {
          02-06 14:33:12.997  2016  2016 F DEBUG   :       #11 pc 0000000000185e6b  /apex/com.android.art/lib64/libart.so (art_quick_osr_stub+27) (BuildId: 1dfb27162fe62a7ac7a10ea361233369)
          02-06 14:33:12.997  2016  2016 F DEBUG   :       #12 pc 00000000003d27ba  /apex/com.android.art/lib64/libart.so (art::jit::Jit::MaybeDoOnStackReplacement(art::Thread*, art::ArtMethod*, unsigned int, int, art::JValue*)+410) (BuildId: 1dfb27162fe62a7ac7a10ea361233369)
          */
-        //JavaScriptCore.JSValueUnprotect(context.context, value)
+        if !context.released {
+            JavaScriptCore.JSValueUnprotect(context.context, value)
+        }
     }
 }
 
