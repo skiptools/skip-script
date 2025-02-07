@@ -16,17 +16,6 @@ let JavaScriptCore: JavaScriptCoreLibrary = JavaScriptCoreLibrary.instance
 
 public typealias ExceptionPtr = UnsafeMutablePointer<JSValueRef?>
 
-/// JIT needs to be disabled on Android to avoid random crashes in `JSValueUnprotect`
-/// See: https://github.com/WebKit/WebKit/blob/main/Tools/Scripts/run-jsc-benchmarks
-private func disableJIT() {
-    // JSC_useWasmIPInt=0 JSC_useWasmLLInt=1 JSC_useWebAssembly=1 JSC_useJIT=0
-    #if SKIP
-    android.system.Os.setenv("JSC_useJIT", "false", true)
-    #else
-    //setenv("JSC_useJIT", "false", 1) // no need: iOS doesn't support JIT anyway :)
-    #endif
-}
-
 /// A context for evaluating JavaScipt.
 public class JSContext {
     public let context: JSContextRef
@@ -34,13 +23,11 @@ public class JSContext {
     private var tryingRecursionGuard = false
 
     public init(jsGlobalContextRef context: JSContextRef) {
-        disableJIT()
         self.context = context
         JavaScriptCore.JSGlobalContextRetain(context)
     }
 
     public init() {
-        disableJIT()
         self.context = JavaScriptCore.JSGlobalContextCreate(nil)
     }
 
@@ -575,7 +562,7 @@ public class JSValue {
          02-06 14:33:12.997  2016  2016 F DEBUG   :       #11 pc 0000000000185e6b  /apex/com.android.art/lib64/libart.so (art_quick_osr_stub+27) (BuildId: 1dfb27162fe62a7ac7a10ea361233369)
          02-06 14:33:12.997  2016  2016 F DEBUG   :       #12 pc 00000000003d27ba  /apex/com.android.art/lib64/libart.so (art::jit::Jit::MaybeDoOnStackReplacement(art::Thread*, art::ArtMethod*, unsigned int, int, art::JValue*)+410) (BuildId: 1dfb27162fe62a7ac7a10ea361233369)
          */
-        JavaScriptCore.JSValueUnprotect(context.context, value)
+        //JavaScriptCore.JSValueUnprotect(context.context, value)
     }
 }
 
