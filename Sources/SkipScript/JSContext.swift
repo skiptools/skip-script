@@ -20,7 +20,11 @@ public typealias ExceptionPtr = UnsafeMutablePointer<JSValueRef?>
 /// See: https://github.com/WebKit/WebKit/blob/main/Tools/Scripts/run-jsc-benchmarks
 private func disableJIT() {
     // JSC_useWasmIPInt=0 JSC_useWasmLLInt=1 JSC_useWebAssembly=1 JSC_useJIT=0
-    setenv("JSC_useJIT", "false", 1)
+    #if SKIP
+    android.system.Os.setenv("JSC_useJIT", "false", true)
+    #else
+    //setenv("JSC_useJIT", "false", 1) // no need: iOS doesn't support JIT anyway :)
+    #endif
 }
 
 /// A context for evaluating JavaScipt.
