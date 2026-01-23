@@ -16,7 +16,7 @@ let package = Package(
         .library(name: "MyProduct", targets: ["MyTarget"]),
     ],
     dependencies: [
-        .package(url: "https://source.skip.tools/skip-script.git", from: "1.0.0"),
+        .package(url: "https://source.skip.dev/skip-script.git", from: "1.0.0"),
     ],
     targets: [
         .target(name: "MyTarget", dependencies: [
@@ -34,7 +34,7 @@ as a dependency and a Swift source file imports the `JavaScriptCore` framework.
 
 In this case, a subset of the the Objective-C JavaScriptAPI is mimicked on the
 Kotlin side, passing the calls through to the underlying C interface to the 
-JavaScriptCore API using JNA and [SkipFFI](https://source.skip.tools/skip-ffi/).
+JavaScriptCore API using JNA and [SkipFFI](https://source.skip.dev/skip-ffi/).
 
 
 An example of evaluating some JavaScript:
@@ -60,7 +60,7 @@ Android, on the other hand, does not ship JSC as part of the operating system, a
 ## Building
 
 This project is a Swift Package Manager module that uses the
-[Skip](https://skip.tools) plugin to transpile Swift into Kotlin.
+[Skip](https://skip.dev) plugin to transpile Swift into Kotlin.
 
 Building the module requires that Skip be installed using 
 [Homebrew](https://brew.sh) with `brew install skiptools/skip/skip`.
