@@ -27,8 +27,7 @@ class SkipScriptletTests : XCTestCase {
             let path: String = args[0].toString()
             let content: String = args[1].toString()
             do {
-                // TODO: atomically: true needs https://github.com/skiptools/skip-foundation/pull/92
-                try content.write(toFile: path, atomically: false, encoding: .utf8)
+                try content.write(toFile: path, atomically: true, encoding: .utf8)
                 return JSValue(bool: true, in: ctx)
             } catch {
                 return JSValue(bool: false, in: ctx)
@@ -76,11 +75,9 @@ class SkipScriptletTests : XCTestCase {
                 let url = URL(fileURLWithPath: path, isDirectory: false)
                 if FileManager.default.fileExists(atPath: path) {
                     let existing = try String(contentsOf: url, encoding: .utf8)
-                    // TODO: atomically: true needs https://github.com/skiptools/skip-foundation/pull/92
-                    try (existing + content).write(toFile: path, atomically: false, encoding: .utf8)
+                    try (existing + content).write(toFile: path, atomically: true, encoding: .utf8)
                 } else {
-                    // TODO: atomically: true needs https://github.com/skiptools/skip-foundation/pull/92
-                    try content.write(toFile: path, atomically: false, encoding: .utf8)
+                    try content.write(toFile: path, atomically: true, encoding: .utf8)
                 }
                 return JSValue(bool: true, in: ctx)
             } catch {
@@ -208,6 +205,10 @@ class SkipScriptletTests : XCTestCase {
             var updated = fs.readFile(testFile);
             if (updated !== 'Hello from JavaScript! More text.')
                 throw new Error('Appended content mismatch: ' + updated);
+
+            // FIXME: overwrite does not truncate: https://github.com/skiptools/skip-foundation/pull/92
+            if (!fs.deleteFile(testFile))
+                throw new Error('deleteFile failed');
 
             // Overwrite the file with new content
             if (!fs.writeFile(testFile, 'Replaced.'))
