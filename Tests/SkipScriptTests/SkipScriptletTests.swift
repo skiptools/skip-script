@@ -135,7 +135,7 @@ class SkipScriptletTests : XCTestCase {
         let ctx = JSContext()
         let device = JSValue(newObjectIn: ctx)
 
-        let isAndroidDevice = ProcessInfo.processInfo.environment["ANDROID_ROOT"] != nil
+        let isAndroidDevice = isRobolectric || isAndroid
 
         // Determine OS name at runtime to work on both platforms
         var osName = "unknown"
