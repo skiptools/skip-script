@@ -12,7 +12,7 @@
 #        - block: 'repositories'
 #          contents:
 #            # this is where the android-jsc libraries are hosted
-#            - 'maven("https://maven.skip.tools")'
+#            - 'maven("https://maven.skip.dev")'
 
 # the blocks to add to the build.gradle.kts
 build:

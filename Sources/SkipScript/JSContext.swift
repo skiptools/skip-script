@@ -139,6 +139,54 @@ public class JSContext {
         JavaScriptCore.JSGarbageCollect(context)
     }
 
+    #if !SKIP
+
+    /// Creates a JavaScript Promise and returns the promise along with its resolve and reject functions.
+    ///
+    /// This allows Swift code to control when a Promise resolves or rejects by calling the
+    /// returned resolve and reject functions directly.
+    public func createPromise() -> JSPromise? {
+        guard let result = evaluateScript("""
+            (function() {
+                var resolve, reject;
+                var promise = new Promise(function(res, rej) { resolve = res; reject = rej; });
+                return {promise: promise, resolve: resolve, reject: reject};
+            })()
+            """) else {
+            return nil
+        }
+        let promise = result.objectForKeyedSubscript("promise")
+        let resolve = result.objectForKeyedSubscript("resolve")
+        let reject = result.objectForKeyedSubscript("reject")
+        return (promise: promise, resolveFunction: resolve, rejectFunction: reject)
+    }
+
+    /// Awaits the resolution of a JavaScript Promise, returning its resolved value.
+    ///
+    /// If the Promise rejects, a ``JSError`` is thrown with the rejection reason.
+    @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
+    public func awaitPromise(_ promise: JSValue) async throws -> JSValue {
+        try await withCheckedThrowingContinuation { continuation in
+            let onResolve = JSValue(newFunctionIn: self) { ctx, obj, args in
+                continuation.resume(returning: args.first ?? JSValue(undefinedIn: ctx))
+                return JSValue(undefinedIn: ctx)
+            }
+            let onReject = JSValue(newFunctionIn: self) { ctx, obj, args in
+                let message = args.first?.toString() ?? "Promise rejected"
+                continuation.resume(throwing: JSError(message: message))
+                return JSValue(undefinedIn: ctx)
+            }
+            let thenFn = promise.objectForKeyedSubscript("then")
+            do {
+                try thenFn.call(withArguments: [onResolve, onReject], this: promise)
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    #endif
+
 }
 
 
@@ -277,6 +325,35 @@ public class JSValue {
         self.value = jsValueRef!
         JavaScriptCore.JSValueProtect(context.context, self.value)
     }
+
+    /// Creates a JavaScript value of the function type that wraps an async Swift callback.
+    ///
+    /// When called from JavaScript, the function returns a `Promise` that resolves with the
+    /// async callback's return value, or rejects if the callback throws.
+    ///
+    /// - Parameters:
+    ///   - context: The execution context to use.
+    ///   - callback: The async callback function.
+    #if !SKIP
+    @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
+    public convenience init(newAsyncFunctionIn context: JSContext, callback: @escaping (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) async throws -> JSValue) {
+        self.init(newFunctionIn: context, callback: { ctx, obj, args in
+            guard let promiseParts = ctx.createPromise() else {
+                return JSValue(undefinedIn: ctx)
+            }
+            Task {
+                do {
+                    let result = try await callback(ctx, obj, args)
+                    _ = try? promiseParts.resolveFunction.call(withArguments: [result])
+                } catch {
+                    let errorValue = JSValue(newErrorFromCause: error, in: ctx)
+                    _ = try? promiseParts.rejectFunction.call(withArguments: [errorValue])
+                }
+            }
+            return promiseParts.promise
+        })
+    }
+    #endif
 
     #if !SKIP
 
@@ -534,7 +611,7 @@ public class JSValue {
 
         let ctx = self.context
         return try context.trying { (exception: ExceptionPtr) in
-            guard let result = JavaScriptCore.JSObjectCallAsFunction(ctx.context, self.value, nil, arguments.count, arguments.count == 0 ? nil : args, exception) else {
+            guard let result = JavaScriptCore.JSObjectCallAsFunction(ctx.context, self.value, this?.value, arguments.count, arguments.count == 0 ? nil : args, exception) else {
                 return JSValue(undefinedIn: ctx)
             }
 
@@ -781,6 +858,12 @@ public struct JSError: Error, CustomStringConvertible {
 /// A function definition, used when defining callbacks.
 public typealias JSFunction = (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) throws -> JSValue
 public typealias JSPromise = (promise: JSValue, resolveFunction: JSValue, rejectFunction: JSValue)
+
+#if !SKIP
+/// An async function definition, used when defining async callbacks that return Promises to JavaScript.
+@available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
+public typealias JSAsyncFunction = (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) async throws -> JSValue
+#endif
 
 private struct _JSFunctionInfoHandle {
     unowned let context: JSContext

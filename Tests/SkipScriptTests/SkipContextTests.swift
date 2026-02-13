@@ -62,6 +62,42 @@ class SkipContextTests : XCTestCase {
         XCTAssertEqual("true12X", ctx.evaluateScript("stringify(true, 1, 2, 'X')")?.toString())
     }
 
+    #if !SKIP
+    func testAsyncStringArgsFunctionProperty() async throws {
+        let ctx = JSContext()
+        let asyncStringify = JSValue(newAsyncFunctionIn: ctx) { ctx, obj, args in
+            try await Task.sleep(nanoseconds: 10_000_000) // 10ms delay to simulate async work
+            return JSValue(string: args.compactMap({ $0.toString() }).joined(), in: ctx)
+        }
+
+        ctx.setObject(asyncStringify, forKeyedSubscript: "asyncStringify")
+
+        do {
+            let promise = try XCTUnwrap(ctx.evaluateScript("asyncStringify()"))
+            let resolved = try await ctx.awaitPromise(promise)
+            XCTAssertEqual("", resolved.toString())
+        }
+
+        do {
+            let promise = try XCTUnwrap(ctx.evaluateScript("asyncStringify('')"))
+            let resolved = try await ctx.awaitPromise(promise)
+            XCTAssertEqual("", resolved.toString())
+        }
+
+        do {
+            let promise = try XCTUnwrap(ctx.evaluateScript("asyncStringify('A', 'BC')"))
+            let resolved = try await ctx.awaitPromise(promise)
+            XCTAssertEqual("ABC", resolved.toString())
+        }
+
+        do {
+            let promise = try XCTUnwrap(ctx.evaluateScript("asyncStringify(true, 1, 2, 'X')"))
+            let resolved = try await ctx.awaitPromise(promise)
+            XCTAssertEqual("true12X", resolved.toString())
+        }
+    }
+    #endif
+
     func testDoubleArgsFunctionProperty() throws {
         let ctx = JSContext()
         let sum = JSValue(newFunctionIn: ctx) { ctx, obj, args in
