@@ -176,7 +176,7 @@ class SkipScriptletTests : XCTestCase {
 
     // MARK: - File System Tests
 
-    func XXXtestFileSystemFunctions() async throws {
+    func testFileSystemFunctions() async throws {
         let ctx = makeFileSystemContext()
 
         // Test: complete file lifecycle from JavaScript
