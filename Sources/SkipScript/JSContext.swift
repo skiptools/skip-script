@@ -139,8 +139,6 @@ public class JSContext {
         JavaScriptCore.JSGarbageCollect(context)
     }
 
-    #if !SKIP
-
     /// Creates a JavaScript Promise and returns the promise along with its resolve and reject functions.
     ///
     /// This allows Swift code to control when a Promise resolves or rejects by calling the
@@ -184,8 +182,6 @@ public class JSContext {
             }
         }
     }
-
-    #endif
 
 }
 
@@ -788,6 +784,27 @@ public func JSValue(string value: String, in context: JSContext) -> JSValue {
     defer { JavaScriptCore.JSStringRelease(str) }
     return JSValue(jsValueRef: JavaScriptCore.JSValueMakeString(context.context, str), in: context)
 }
+
+// workaround for inability to implement this as a convenience constructor due to needing local variables
+@available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
+public func JSValue(newAsyncFunctionIn context: JSContext, callback: @escaping (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) async throws -> JSValue) -> JSValue {
+    return JSValue(newFunctionIn: context, callback: { ctx, obj, args in
+        guard let promiseParts = ctx.createPromise() else {
+            return JSValue(undefinedIn: ctx)
+        }
+        let (promise, resolveFunction, rejectFunction) = promiseParts // SKIP 3-tuples do not handle referencing elements by name
+        Task {
+            do {
+                let result = try await callback(ctx, obj, args)
+                _ = try? resolveFunction.call(withArguments: [result])
+            } catch {
+                let errorValue = JSValue(object: String(describing: error), in: ctx)
+                _ = try? rejectFunction.call(withArguments: [errorValue])
+            }
+        }
+        return promise
+    })
+}
 #endif
 
 
@@ -859,11 +876,9 @@ public struct JSError: Error, CustomStringConvertible {
 public typealias JSFunction = (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) throws -> JSValue
 public typealias JSPromise = (promise: JSValue, resolveFunction: JSValue, rejectFunction: JSValue)
 
-#if !SKIP
 /// An async function definition, used when defining async callbacks that return Promises to JavaScript.
 @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
 public typealias JSAsyncFunction = (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) async throws -> JSValue
-#endif
 
 private struct _JSFunctionInfoHandle {
     unowned let context: JSContext

@@ -62,7 +62,6 @@ class SkipContextTests : XCTestCase {
         XCTAssertEqual("true12X", ctx.evaluateScript("stringify(true, 1, 2, 'X')")?.toString())
     }
 
-    #if !SKIP
     func testAsyncStringArgsFunctionProperty() async throws {
         let ctx = JSContext()
         let asyncStringify = JSValue(newAsyncFunctionIn: ctx) { ctx, obj, args in
@@ -96,7 +95,6 @@ class SkipContextTests : XCTestCase {
             XCTAssertEqual("true12X", resolved.toString())
         }
     }
-    #endif
 
     func testDoubleArgsFunctionProperty() throws {
         let ctx = JSContext()
