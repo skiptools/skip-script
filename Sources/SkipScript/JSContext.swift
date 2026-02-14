@@ -204,6 +204,16 @@ extension JSValue : JSInstance {
 
 
 extension JSInstance {
+    /// The value of the property.
+    public subscript(propertyName: String) -> JSValue {
+        get {
+            objectForKeyedSubscript(propertyName)
+        }
+
+        nonmutating set {
+            setObject(newValue, forKeyedSubscript: propertyName)
+        }
+    }
 
     public func setObject(_ object: Any, forKeyedSubscript key: String) {
         let propName = JavaScriptCore.JSStringCreateWithUTF8CString(key)
@@ -379,20 +389,6 @@ public class JSValue {
         //    JSObjectMakeError(context.contextRef, arguments.count, arguments.map { $0.valueRef }, $0)
         //}
     }
-
-    /// The value of the property.
-    public subscript(propertyName: String) -> JSValue {
-        get throws {
-            if !isObject { return JSValue(undefinedIn: context) }
-            let property = JSStringCreateWithUTF8CString(propertyName)
-            defer { JSStringRelease(property) }
-            let resultRef = try context.trying {
-                JSObjectGetProperty(context.context, value, property, $0)
-            }
-            return resultRef.map { JSValue(jsValueRef: $0, in: context) } ?? JSValue(undefinedIn: context)
-        }
-    }
-
 
     /// Sets the property of the object to the given value.
     ///

@@ -17,12 +17,12 @@ class SkipScriptletTests : XCTestCase {
         let fs = JSValue(newObjectIn: ctx)
 
         // fs.tempDir() -> string
-        fs.setObject(JSValue(newFunctionIn: ctx) { ctx, obj, args in
+        fs["tempDir"] = JSValue(newFunctionIn: ctx) { ctx, obj, args in
             return JSValue(string: FileManager.default.temporaryDirectory.path, in: ctx)
-        }, forKeyedSubscript: "tempDir")
+        }
 
         // fs.writeFile(path, content) -> boolean
-        fs.setObject(JSValue(newFunctionIn: ctx) { ctx, obj, args in
+        fs["writeFile"] = JSValue(newFunctionIn: ctx) { ctx, obj, args in
             guard args.count >= 2 else { return JSValue(bool: false, in: ctx) }
             let path: String = args[0].toString()
             let content: String = args[1].toString()
@@ -32,10 +32,10 @@ class SkipScriptletTests : XCTestCase {
             } catch {
                 return JSValue(bool: false, in: ctx)
             }
-        }, forKeyedSubscript: "writeFile")
+        }
 
         // fs.readFile(path) -> string | null
-        fs.setObject(JSValue(newFunctionIn: ctx) { ctx, obj, args in
+        fs["readFile"] = JSValue(newFunctionIn: ctx) { ctx, obj, args in
             guard args.count >= 1 else { return JSValue(nullIn: ctx) }
             let path: String = args[0].toString()
             do {
@@ -45,17 +45,17 @@ class SkipScriptletTests : XCTestCase {
             } catch {
                 return JSValue(nullIn: ctx)
             }
-        }, forKeyedSubscript: "readFile")
+        }
 
         // fs.fileExists(path) -> boolean
-        fs.setObject(JSValue(newFunctionIn: ctx) { ctx, obj, args in
+        fs["fileExists"] = JSValue(newFunctionIn: ctx) { ctx, obj, args in
             guard args.count >= 1 else { return JSValue(bool: false, in: ctx) }
             let path: String = args[0].toString()
             return JSValue(bool: FileManager.default.fileExists(atPath: path), in: ctx)
-        }, forKeyedSubscript: "fileExists")
+        }
 
         // fs.deleteFile(path) -> boolean
-        fs.setObject(JSValue(newFunctionIn: ctx) { ctx, obj, args in
+        fs["deleteFile"] = JSValue(newFunctionIn: ctx) { ctx, obj, args in
             guard args.count >= 1 else { return JSValue(bool: false, in: ctx) }
             let path: String = args[0].toString()
             do {
@@ -64,10 +64,10 @@ class SkipScriptletTests : XCTestCase {
             } catch {
                 return JSValue(bool: false, in: ctx)
             }
-        }, forKeyedSubscript: "deleteFile")
+        }
 
         // fs.appendFile(path, content) -> boolean
-        fs.setObject(JSValue(newFunctionIn: ctx) { ctx, obj, args in
+        fs["appendFile"] = JSValue(newFunctionIn: ctx) { ctx, obj, args in
             guard args.count >= 2 else { return JSValue(bool: false, in: ctx) }
             let path: String = args[0].toString()
             let content: String = args[1].toString()
@@ -83,9 +83,9 @@ class SkipScriptletTests : XCTestCase {
             } catch {
                 return JSValue(bool: false, in: ctx)
             }
-        }, forKeyedSubscript: "appendFile")
+        }
 
-        ctx.setObject(fs, forKeyedSubscript: "fs")
+        ctx["fs"] = fs
         return ctx
     }
 
@@ -96,7 +96,7 @@ class SkipScriptletTests : XCTestCase {
         let net = JSValue(newObjectIn: ctx)
 
         // net.fetch(url) -> Promise<string>
-        net.setObject(JSValue(newAsyncFunctionIn: ctx) { ctx, obj, args in
+        net["fetch"] = JSValue(newAsyncFunctionIn: ctx) { ctx, obj, args in
             guard args.count >= 1 else {
                 return JSValue(string: "", in: ctx)
             }
@@ -107,10 +107,10 @@ class SkipScriptletTests : XCTestCase {
             let (data, _) = try await URLSession.shared.data(from: url)
             let body = String(data: data, encoding: .utf8) ?? ""
             return JSValue(string: body, in: ctx)
-        }, forKeyedSubscript: "fetch")
+        }
 
         // net.fetchStatus(url) -> Promise<number>
-        net.setObject(JSValue(newAsyncFunctionIn: ctx) { ctx, obj, args in
+        net["fetchStatus"] = JSValue(newAsyncFunctionIn: ctx) { ctx, obj, args in
             guard args.count >= 1 else {
                 return JSValue(double: -1.0, in: ctx)
             }
@@ -123,9 +123,9 @@ class SkipScriptletTests : XCTestCase {
                 return JSValue(double: Double(httpResponse.statusCode), in: ctx)
             }
             return JSValue(double: -1.0, in: ctx)
-        }, forKeyedSubscript: "fetchStatus")
+        }
 
-        ctx.setObject(net, forKeyedSubscript: "net")
+        ctx["net"] = net
         return ctx
     }
 
@@ -154,29 +154,29 @@ class SkipScriptletTests : XCTestCase {
         }
 
         // Static properties
-        device.setObject(JSValue(string: osName, in: ctx), forKeyedSubscript: "osName")
-        device.setObject(JSValue(string: ProcessInfo.processInfo.operatingSystemVersionString, in: ctx), forKeyedSubscript: "osVersion")
-        device.setObject(JSValue(double: Double(ProcessInfo.processInfo.processorCount), in: ctx), forKeyedSubscript: "processorCount")
-        device.setObject(JSValue(string: ProcessInfo.processInfo.hostName, in: ctx), forKeyedSubscript: "hostName")
-        device.setObject(JSValue(bool: isAndroidDevice, in: ctx), forKeyedSubscript: "isAndroid")
-        device.setObject(JSValue(string: ProcessInfo.processInfo.globallyUniqueString, in: ctx), forKeyedSubscript: "uniqueId")
-        device.setObject(JSValue(string: FileManager.default.temporaryDirectory.path, in: ctx), forKeyedSubscript: "tempDir")
+        device["osName"] = JSValue(string: osName, in: ctx)
+        device["osVersion"] = JSValue(string: ProcessInfo.processInfo.operatingSystemVersionString, in: ctx)
+        device["processorCount"] = JSValue(double: Double(ProcessInfo.processInfo.processorCount), in: ctx)
+        device["hostName"] = JSValue(string: ProcessInfo.processInfo.hostName, in: ctx)
+        device["isAndroid"] = JSValue(bool: isAndroidDevice, in: ctx)
+        device["uniqueId"] = JSValue(string: ProcessInfo.processInfo.globallyUniqueString, in: ctx)
+        device["tempDir"] = JSValue(string: FileManager.default.temporaryDirectory.path, in: ctx)
 
         // device.getEnv(key) -> string
-        device.setObject(JSValue(newFunctionIn: ctx) { ctx, obj, args in
+        device["getEnv"] = JSValue(newFunctionIn: ctx) { ctx, obj, args in
             guard args.count >= 1 else { return JSValue(string: "", in: ctx) }
             let key: String = args[0].toString()
             let value = ProcessInfo.processInfo.environment[key] ?? ""
             return JSValue(string: value, in: ctx)
-        }, forKeyedSubscript: "getEnv")
+        }
 
-        ctx.setObject(device, forKeyedSubscript: "device")
+        ctx["device"] = device
         return ctx
     }
 
     // MARK: - File System Tests
 
-    func testFileSystemFunctions() async throws {
+    func testFileSystemFunctions() throws {
         let ctx = makeFileSystemContext()
 
         // Test: complete file lifecycle from JavaScript
@@ -279,7 +279,7 @@ class SkipScriptletTests : XCTestCase {
 
     // MARK: - Device Info Tests
 
-    func testDeviceInfoFuctions() async throws {
+    func testDeviceInfoFuctions() throws {
         let ctx = makeDeviceInfoContext()
 
         // Test: query and validate device properties from JavaScript
