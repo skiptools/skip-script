@@ -239,6 +239,9 @@ class SkipScriptletTests : XCTestCase {
     // MARK: - Async Network Tests
 
     func testAsyncNetworkFunctions() async throws {
+        if isRobolectric {
+            throw XCTSkip("Fails under Robolectric with: java.security.cert.CertPathValidatorException: Trust anchor for certification path not found.")
+        }
         let ctx = makeNetworkContext()
 
         // Test 1: Fetch a well-known page and verify its content
