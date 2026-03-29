@@ -1,4 +1,4 @@
-## skip.tools per-configuration file
+## Skip configuration for SkipScript module
 
 #skip:
 #  package: 'skip.script'
