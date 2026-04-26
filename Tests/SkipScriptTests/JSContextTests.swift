@@ -81,9 +81,6 @@ class JSContextTests : XCTestCase {
     }
 
     func testIntl() throws {
-        // the Skip side uses jsc-android rather than jsc-android-intl for size savings
-        // TODO: provide a separate SkipScriptIntl target that depends on jsc-android-intl
-        #if !SKIP
         let ctx = try XCTUnwrap(JSContext())
 
         XCTAssertEqual("12,34 €", ctx.evaluateScript("new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(12.34)")?.toString())
@@ -104,7 +101,6 @@ class JSContextTests : XCTestCase {
 
         XCTAssertEqual("10/24/2022", ctx.evaluateScript("new Intl.DateTimeFormat('en-US', {timeZone: 'UTC'}).format(new Date('2022-10-24'))")?.toString())
         XCTAssertEqual("24/10/2022", ctx.evaluateScript("new Intl.DateTimeFormat('fr-FR', {timeZone: 'UTC'}).format(new Date('2022-10-24'))")?.toString())
-        #endif
     }
 
     func testProxy() throws {
