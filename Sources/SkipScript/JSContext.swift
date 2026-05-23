@@ -15,7 +15,7 @@ let JavaScriptCore: JavaScriptCoreLibrary = JavaScriptCoreLibrary.instance
 public typealias ExceptionPtr = UnsafeMutablePointer<JSValueRef?>
 
 /// A context for evaluating JavaScipt.
-public class JSContext {
+public class JSContext : @unchecked Sendable {
     public let context: JSContextRef
     public private(set) var exception: JSValue? = nil
     private var tryingRecursionGuard = false
@@ -245,7 +245,7 @@ extension JSInstance {
 /// A JSValue is a reference to a JavaScript value.
 ///
 /// Every JSValue originates from a JSContext and holds a strong reference to it.
-public class JSValue {
+public class JSValue : @unchecked Sendable {
     public let context: JSContext
     public let value: JSValueRef
 
@@ -343,7 +343,7 @@ public class JSValue {
     ///   - callback: The async callback function.
     #if !SKIP
     @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
-    public convenience init(newAsyncFunctionIn context: JSContext, callback: @escaping (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) async throws -> JSValue) {
+    public convenience init(newAsyncFunctionIn context: JSContext, callback: @Sendable @escaping (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) async throws -> JSValue) {
         self.init(newFunctionIn: context, callback: { ctx, obj, args in
             guard let promiseParts = ctx.createPromise() else {
                 return JSValue(undefinedIn: ctx)
