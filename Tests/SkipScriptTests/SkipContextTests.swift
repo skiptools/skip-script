@@ -146,4 +146,32 @@ class SkipContextTests : XCTestCase {
             }
         }
     }
+
+    // MARK: F2 — exception capture (regression tests)
+
+    func testEvaluateScriptCapturesThrownException() throws {
+        let ctx = JSContext()
+        XCTAssertNil(ctx.exception)
+        let result = ctx.evaluateScript("throw new Error('boom')")
+        XCTAssertNil(result, "a throwing script should evaluate to nil")
+        let exception = try XCTUnwrap(ctx.exception, "the thrown exception should be captured")
+        XCTAssertTrue(exception.toString().contains("boom"), "unexpected exception text: \(exception.toString())")
+    }
+
+    func testEvaluateScriptCapturesSyntaxError() throws {
+        let ctx = JSContext()
+        let result = ctx.evaluateScript("for (;;")
+        XCTAssertNil(result, "a syntactically invalid script should evaluate to nil")
+        XCTAssertNotNil(ctx.exception, "the syntax error should be captured")
+    }
+
+    // Also exercises F1: clearing a uniquely-held exception must release it outside the lock (no deadlock).
+    func testExceptionClearsAfterSuccessfulEvaluation() throws {
+        let ctx = JSContext()
+        _ = ctx.evaluateScript("throw new Error('boom')")
+        XCTAssertNotNil(ctx.exception)
+        let ok = ctx.evaluateScript("1 + 1")
+        XCTAssertEqual(2.0, ok?.toDouble())
+        XCTAssertNil(ctx.exception, "a successful evaluation should clear the previous exception")
+    }
 }

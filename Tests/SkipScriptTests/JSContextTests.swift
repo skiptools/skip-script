@@ -16,7 +16,7 @@ let callbackResult = Double.pi
 class JSContextTests : XCTestCase {
     let logger: Logger = Logger(subsystem: "test", category: "JSContextTests")
 
-    fileprivate final class JSEvalException : Error, @unchecked Sendable {
+    fileprivate final class JSEvalException : Error {
         var exception: JSValue?
 
         init(exception: JSValue? = nil) {
