@@ -14,20 +14,121 @@ let JavaScriptCore: JavaScriptCoreLibrary = JavaScriptCoreLibrary.instance
 
 public typealias ExceptionPtr = UnsafeMutablePointer<JSValueRef?>
 
+/// A `Sendable` holder for an immutable JavaScriptCore pointer.
+///
+/// Sharing this across concurrency domains is safe because the wrapped pointer value never changes
+/// after creation, and the lifetime/threading of the underlying JavaScriptCore object it references
+/// is managed by JavaScriptCore itself. Marking only this tiny immutable holder `@unchecked` lets the
+/// public `JSContext`/`JSValue` types remain *checked* `Sendable`.
+struct JSCPointer<Pointer> : @unchecked Sendable {
+    let pointer: Pointer
+}
+
+/// Lock-guarded mutable state for `JSContext`.
+///
+/// All of `JSContext`'s mutable state lives here behind a lock, so `JSContext` itself holds only
+/// immutable `let`s and can be a *checked* `Sendable` (no `@unchecked` on the public type). The
+/// `@unchecked` here is sound because every access goes through `locked(_:)`.
+final class JSContextState : @unchecked Sendable {
+    #if !SKIP
+    private let lock = NSLock()
+    #endif
+    private var exception: JSValue?
+    private var tryingRecursion = false
+    private var released = false
+
+    private func locked<T>(_ body: () -> T) -> T {
+        #if !SKIP
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+        #else
+        return synchronized(self) { body() }
+        #endif
+    }
+
+    var currentException: JSValue? {
+        get { locked { exception } }
+        set {
+            #if !SKIP
+            // Swap under the lock, but release the *previous* value outside it: a JSValue's deinit
+            // reads back into this state (context.released), which would otherwise re-enter this
+            // non-recursive lock on the same thread and deadlock.
+            let previous = locked { () -> JSValue? in
+                let old = exception
+                exception = newValue
+                return old
+            }
+            withExtendedLifetime(previous) { }
+            #else
+            // Kotlin monitors are reentrant and finalization is non-deterministic, so the swap-out
+            // dance is unnecessary on this platform.
+            locked { exception = newValue }
+            #endif
+        }
+    }
+
+    var isReleased: Bool {
+        get { locked { released } }
+        set { locked { released = newValue } }
+    }
+
+    /// Atomically enters the recursion guard, returning `false` if it was already entered.
+    func enterRecursionGuard() -> Bool {
+        locked {
+            if tryingRecursion {
+                return false
+            }
+            tryingRecursion = true
+            return true
+        }
+    }
+
+    func exitRecursionGuard() {
+        locked { tryingRecursion = false }
+    }
+}
+
+/// Allocates an exception out-parameter pointer initialized to `nil`; pair every call with `freeExceptionPtr(_:)`.
+///
+/// On Darwin a *null* pointer (which is what `ExceptionPtr(nil)` produces) makes JavaScriptCore silently
+/// drop any thrown exception, so we heap-allocate a real, writable slot. On Skip/JNA `ExceptionPtr(nil)`
+/// already yields a usable pointer, so it is returned as-is.
+fileprivate func makeExceptionPtr() -> ExceptionPtr {
+    #if !SKIP
+    let ptr = UnsafeMutablePointer<JSValueRef?>.allocate(capacity: 1)
+    ptr.initialize(to: nil)
+    return ptr
+    #else
+    return ExceptionPtr(nil)
+    #endif
+}
+
+fileprivate func freeExceptionPtr(_ exception: ExceptionPtr) {
+    #if !SKIP
+    exception.deinitialize(count: 1)
+    exception.deallocate()
+    #endif
+}
+
 /// A context for evaluating JavaScipt.
-public class JSContext {
-    public let context: JSContextRef
-    public private(set) var exception: JSValue? = nil
-    private var tryingRecursionGuard = false
-    var released = false
+public final class JSContext : Sendable {
+    private let contextPointer: JSCPointer<JSContextRef>
+    public var context: JSContextRef { contextPointer.pointer }
+    private let state = JSContextState()
+    public var exception: JSValue? { state.currentException }
+    var released: Bool {
+        get { state.isReleased }
+        set { state.isReleased = newValue }
+    }
 
     public init(jsGlobalContextRef context: JSContextRef) {
-        self.context = context
+        self.contextPointer = JSCPointer(pointer: context)
         JavaScriptCore.JSGlobalContextRetain(context)
     }
 
     public init() {
-        self.context = JavaScriptCore.JSGlobalContextCreate(nil)
+        self.contextPointer = JSCPointer(pointer: JavaScriptCore.JSGlobalContextCreate(nil))
     }
 
     deinit {
@@ -45,15 +146,15 @@ public class JSContext {
             #endif
 
             if let error = errorPtr {
-                self.exception = JSValue(jsValueRef: error, in: self)
+                state.currentException = JSValue(jsValueRef: error, in: self)
                 return false
             } else {
                 // clear the current exception
-                self.exception = nil
+                state.currentException = nil
             }
         } else {
             // clear the current exception
-            self.exception = nil
+            state.currentException = nil
         }
 
         return true
@@ -63,7 +164,8 @@ public class JSContext {
         let scriptValue = JavaScriptCore.JSStringCreateWithUTF8CString(script)
         defer { JavaScriptCore.JSStringRelease(scriptValue) }
 
-        let exception = ExceptionPtr(nil)
+        let exception = makeExceptionPtr()
+        defer { freeExceptionPtr(exception) }
         let result = JavaScriptCore.JSEvaluateScript(context, scriptValue, nil, nil, 1, exception)
         if !clearException(exception) {
             return nil
@@ -85,11 +187,10 @@ public class JSContext {
             // Creating a JSError from the errorPointer may involve calling functions that throw errors,
             // though the errors are all handled internally. Guard against infinite recursion by short-
             // circuiting those cases
-            if tryingRecursionGuard {
+            if !state.enterRecursionGuard() {
                 return result
             } else {
-                tryingRecursionGuard = true
-                defer { tryingRecursionGuard = false }
+                defer { state.exitRecursionGuard() }
                 let error = JSValue(jsValueRef: errorPointer, in: self)
                 throw JSError(jsError: error)
             }
@@ -219,7 +320,8 @@ extension JSInstance {
     public func setObject(_ object: Any, forKeyedSubscript key: String) {
         let propName = JavaScriptCore.JSStringCreateWithUTF8CString(key)
         defer { JavaScriptCore.JSStringRelease(propName) }
-        let exception = ExceptionPtr(nil)
+        let exception = makeExceptionPtr()
+        defer { freeExceptionPtr(exception) }
         let value = (object as? JSValue) ?? JSValue(object: object, in: JSContext(jsGlobalContextRef: self.contextRef))
         let valueRef = value.value
         JavaScriptCore.JSObjectSetProperty(self.contextRef, self.valueRef, propName, valueRef, JSPropertyAttributes(kJSPropertyAttributeNone), exception)
@@ -228,7 +330,8 @@ extension JSInstance {
     public func objectForKeyedSubscript(_ key: String) -> JSValue {
         let propName = JavaScriptCore.JSStringCreateWithUTF8CString(key)
         defer { JavaScriptCore.JSStringRelease(propName) }
-        let exception = ExceptionPtr(nil)
+        let exception = makeExceptionPtr()
+        defer { freeExceptionPtr(exception) }
         let ctx = JSContext(jsGlobalContextRef: self.contextRef)
         let value = JavaScriptCore.JSObjectGetProperty(self.contextRef, self.valueRef, propName, exception)
         if !ctx.clearException(exception) {
@@ -245,60 +348,64 @@ extension JSInstance {
 /// A JSValue is a reference to a JavaScript value.
 ///
 /// Every JSValue originates from a JSContext and holds a strong reference to it.
-public class JSValue {
+public final class JSValue : Sendable {
     public let context: JSContext
-    public let value: JSValueRef
+    private let valuePointer: JSCPointer<JSValueRef>
+    public var value: JSValueRef { valuePointer.pointer }
 
     public init(jsValueRef: JSValueRef, in context: JSContext) {
         self.context = context
-        self.value = jsValueRef
-        JavaScriptCore.JSValueProtect(context.context, self.value)
+        self.valuePointer = JSCPointer(pointer: jsValueRef)
+        JavaScriptCore.JSValueProtect(context.context, jsValueRef)
     }
 
     public init(nullIn context: JSContext) {
         self.context = context
-        self.value = JavaScriptCore.JSValueMakeNull(context.context)
-        JavaScriptCore.JSValueProtect(context.context, self.value)
+        let ref: JSValueRef = JavaScriptCore.JSValueMakeNull(context.context)
+        self.valuePointer = JSCPointer(pointer: ref)
+        JavaScriptCore.JSValueProtect(context.context, ref)
     }
 
     public init(object obj: Any, in context: JSContext) {
         self.context = context
+        let ref: JSValueRef
         switch obj {
         case let bol as Bool:
-            self.value = JavaScriptCore.JSValueMakeBoolean(context.context, bol)
+            ref = JavaScriptCore.JSValueMakeBoolean(context.context, bol)
 
         case let num as Double:
-            self.value = JavaScriptCore.JSValueMakeNumber(context.context, num)
+            ref = JavaScriptCore.JSValueMakeNumber(context.context, num)
         case let num as Float:
-            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+            ref = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
 
         case let num as Int8:
-            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+            ref = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
         case let num as Int16:
-            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+            ref = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
         case let num as Int32:
-            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+            ref = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
         case let num as Int64:
-            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+            ref = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
 
         case let num as UInt8:
-            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+            ref = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
         case let num as UInt16:
-            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+            ref = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
         case let num as UInt32:
-            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+            ref = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
         case let num as UInt64:
-            self.value = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
+            ref = JavaScriptCore.JSValueMakeNumber(context.context, Double(num))
 
         case let str as String:
             let jstr = JavaScriptCore.JSStringCreateWithUTF8CString(str)
             defer { JavaScriptCore.JSStringRelease(jstr) }
-            self.value = JavaScriptCore.JSValueMakeString(context.context, jstr)
+            ref = JavaScriptCore.JSValueMakeString(context.context, jstr)
 
         default:
-            self.value = JavaScriptCore.JSValueMakeNull(context.context)
+            ref = JavaScriptCore.JSValueMakeNull(context.context)
         }
-        JavaScriptCore.JSValueProtect(context.context, self.value)
+        self.valuePointer = JSCPointer(pointer: ref)
+        JavaScriptCore.JSValueProtect(context.context, ref)
     }
 
     /// Creates a JavaScript value of the function type.
@@ -329,8 +436,8 @@ public class JSValue {
 
         let jsValueRef = JavaScriptCore.JSObjectMake(context.context, cls, info)
         self.context = context
-        self.value = jsValueRef!
-        JavaScriptCore.JSValueProtect(context.context, self.value)
+        self.valuePointer = JSCPointer(pointer: jsValueRef!)
+        JavaScriptCore.JSValueProtect(context.context, jsValueRef!)
     }
 
     /// Creates a JavaScript value of the function type that wraps an async Swift callback.
@@ -343,7 +450,7 @@ public class JSValue {
     ///   - callback: The async callback function.
     #if !SKIP
     @available(macOS 10.15, iOS 13.0, watchOS 6.0, tvOS 13.0, *)
-    public convenience init(newAsyncFunctionIn context: JSContext, callback: @escaping (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) async throws -> JSValue) {
+    public convenience init(newAsyncFunctionIn context: JSContext, callback: @Sendable @escaping (_ ctx: JSContext, _ obj: JSValue?, _ args: [JSValue]) async throws -> JSValue) {
         self.init(newFunctionIn: context, callback: { ctx, obj, args in
             guard let promiseParts = ctx.createPromise() else {
                 return JSValue(undefinedIn: ctx)
@@ -479,7 +586,8 @@ public class JSValue {
     }
 
     public func toDouble() -> Double {
-        let exception = ExceptionPtr(nil)
+        let exception = makeExceptionPtr()
+        defer { freeExceptionPtr(exception) }
         let result = JavaScriptCore.JSValueToNumber(context.context, value, exception)
         context.clearException(exception)
         return result
@@ -510,7 +618,8 @@ public class JSValue {
 
         var result: [Any?] = []
 
-        let exception = ExceptionPtr(nil)
+        let exception = makeExceptionPtr()
+        defer { freeExceptionPtr(exception) }
         for index in 0..<len {
             guard let elementValue = JavaScriptCore.JSObjectGetPropertyAtIndex(context.context, value, .init(index), exception) else {
                 return []
@@ -566,7 +675,8 @@ public class JSValue {
         let lengthProperty = JavaScriptCore.JSStringCreateWithUTF8CString("length")
         defer { JavaScriptCore.JSStringRelease(lengthProperty) }
 
-        let exception = ExceptionPtr(nil)
+        let exception = makeExceptionPtr()
+        defer { freeExceptionPtr(exception) }
         let lengthValue = JavaScriptCore.JSObjectGetProperty(context.context, value, lengthProperty, exception)
         if !context.clearException(exception) { return 0 }
         let length = Int(JavaScriptCore.JSValueToNumber(context.context, lengthValue, exception))
@@ -613,10 +723,16 @@ public class JSValue {
     }
 
     deinit {
+        #if SKIP
         // This can crash on Android if we do not guard for a released context
         if !context.released {
             JavaScriptCore.JSValueUnprotect(context.context, value)
         }
+        #else
+        // On Darwin every JSValue holds a strong reference to its JSContext, so the context always
+        // outlives its values; the `released` guard (and its lock) is unnecessary on this hot path.
+        JavaScriptCore.JSValueUnprotect(context.context, value)
+        #endif
     }
 }
 
