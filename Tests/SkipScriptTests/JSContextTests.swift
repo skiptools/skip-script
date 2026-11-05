@@ -1,5 +1,4 @@
 // Copyright 2023–2026 Skip
-// SPDX-License-Identifier: MPL-2.0
 import OSLog
 import Foundation
 import JavaScriptCore // this import means we're testing JavaScriptCore.JSContext()
